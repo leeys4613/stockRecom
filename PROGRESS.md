@@ -24,7 +24,7 @@
 - [x] **준비**: PRD v2, requirements.txt, .gitignore, venv, git 초기 커밋
 - [x] **0. 골격**: `config.py`, `db/`(SQLite 스키마), `main.py`(FastAPI, `/health`), `.env.example`
   - 완료 기준: 서버 기동 + `/health` 200 + DB 파일 생성
-- [ ] **1. 매크로 대시보드**: `collectors/macro.py`(7개 지표, 실패 처리), DB 저장, `templates/index.html`(지표 표, 신선도 배지, 다크모드)
+- [x] **1. 매크로 대시보드**: `collectors/macro.py`(7개 지표, 실패 처리), DB 저장, `templates/index.html`(지표 표, 신선도 배지, 다크모드)
   - 완료 기준: 브라우저에서 지표 표시, 일부 실패 시에도 페이지 정상
 - [ ] **2. 점수 엔진**: `scoring/`(변동률→가중 합산→0~100, 점수 구간별 비중 규칙), `tests/`
   - 완료 기준: 단위 테스트 통과
@@ -36,7 +36,7 @@
 - [ ] **6. KIS 연동**: ⚠ 사람 확인 필요 (앱 키, 모의투자, 제공 항목 사전 조사)
 
 ## 다음 할 일
-1. 단계 1 시작 (`collectors/macro.py` → DB 저장 → `templates/index.html`)
+1. 단계 2 시작 (`scoring/` 변동률→가중합→0~100, 구간별 비중, `tests/`)
 
 ## 사람 확인 필요 (무인 실행 시 여기서 멈춤)
 - (없음)
@@ -46,6 +46,7 @@
 - 2026-11-01: KIS API는 최후순위(6단계)
 - 2026-11-01: Python 3.11은 uv로 venv 구성 (시스템 Python 3.9)
 - 2026-11-01: 전원 스케줄 대신 상시 가동 + caffeinate
+- 2026-11-01: yfinance에서 CNH=X/USDCNH=X는 데이터가 없어 CNY=X(위안)로 대체. 실제 CNH 필요 시 사람 확인
 
 ## 막힌 점 / 메모
 - (없음)

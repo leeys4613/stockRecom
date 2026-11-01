@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K-MacroSight</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --mut:#666; --bd:#ddd; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --fg:#e8e8e8; --mut:#999; --bd:#2c3138; } }
+  body { background:var(--bg); color:var(--fg); font-family:-apple-system,sans-serif; max-width:760px; margin:0 auto; padding:16px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:8px 6px; border-bottom:1px solid var(--bd); text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  .up { color:#d33; } .down { color:#36c; }
+  .badge { font-size:12px; padding:2px 8px; border-radius:10px; color:#fff; }
+  .fresh { background:#2a9d4a; } .stale { background:#d9a000; } .failed { background:#d33; } .none { background:#888; }
+  .err { color:var(--mut); font-size:12px; text-align:left; }
+  button { padding:8px 14px; }
+  footer { color:var(--mut); font-size:12px; margin-top:24px; }
+</style>
+</head>
+<body>
+<h1>K-MacroSight</h1>
+<form method="post" action="/refresh"><button type="submit">지금 갱신</button></form>
+<table id="macro">
+  <thead><tr><th>지표</th><th>현재값</th><th>전일비</th><th>상태</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr data-key="{{ r.key }}">
+    <td>{{ r.name }}</td>
+    <td>{% if r.value is not none %}{{ "{:,.2f}".format(r.value) }}{% else %}-{% endif %}</td>
+    <td class="{% if r.change_pct is not none %}{{ 'up' if r.change_pct >= 0 else 'down' }}{% endif %}">
+      {% if r.change_pct is not none %}{{ "{:+.2f}".format(r.change_pct) }}%{% else %}-{% endif %}</td>
+    <td><span class="badge {{ r.freshness }}">{{ {'fresh':'최신','stale':'오래됨','failed':'수집 실패','none':'데이터 없음'}[r.freshness] }}</span></td>
+  </tr>
+  {% if r.freshness == 'failed' %}
+  <tr><td colspan="4" class="err">{{ r.attempted_at }} 실패: {{ r.error }}{% if r.ok_at %} (마지막 성공 {{ r.ok_at }}){% endif %}</td></tr>
+  {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+<footer>개인용 참고 도구이며 투자자문이 아닙니다.</footer>
+</body>
+</html>

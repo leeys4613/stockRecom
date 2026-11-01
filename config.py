@@ -14,7 +14,7 @@ MACRO_INDICATORS = {
     "US10Y": ("미국채 10년", "^TNX"),
     "USDKRW": ("USD/KRW", "KRW=X"),
     "USDJPY": ("USD/JPY", "JPY=X"),
-    "USDCNH": ("USD/CNH", "CNH=X"),
+    "USDCNH": ("USD/CNY (CNH 대용)", "CNY=X"),
     "BTC": ("비트코인", "BTC-USD"),
     "SOX": ("필라델피아 반도체", "^SOX"),
     "WTI": ("WTI 원유", "CL=F"),
