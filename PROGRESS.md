@@ -22,7 +22,7 @@
 ## 단계 체크리스트
 
 - [x] **준비**: PRD v2, requirements.txt, .gitignore, venv, git 초기 커밋
-- [ ] **0. 골격**: `config.py`, `db/`(SQLite 스키마), `main.py`(FastAPI, `/health`), `.env.example`
+- [x] **0. 골격**: `config.py`, `db/`(SQLite 스키마), `main.py`(FastAPI, `/health`), `.env.example`
   - 완료 기준: 서버 기동 + `/health` 200 + DB 파일 생성
 - [ ] **1. 매크로 대시보드**: `collectors/macro.py`(7개 지표, 실패 처리), DB 저장, `templates/index.html`(지표 표, 신선도 배지, 다크모드)
   - 완료 기준: 브라우저에서 지표 표시, 일부 실패 시에도 페이지 정상
@@ -36,7 +36,7 @@
 - [ ] **6. KIS 연동**: ⚠ 사람 확인 필요 (앱 키, 모의투자, 제공 항목 사전 조사)
 
 ## 다음 할 일
-1. 단계 0 시작 (`config.py` → `db/` → `main.py` → `.env.example`)
+1. 단계 1 시작 (`collectors/macro.py` → DB 저장 → `templates/index.html`)
 
 ## 사람 확인 필요 (무인 실행 시 여기서 멈춤)
 - (없음)
