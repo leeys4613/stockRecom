@@ -1,0 +1,28 @@
+# Web / server
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+
+# Scheduler
+apscheduler
+
+# Data collection
+yfinance
+feedparser
+httpx
+beautifulsoup4
+lxml
+
+# Analysis / LLM
+anthropic
+pydantic
+pandas
+
+# Config / calendar
+python-dotenv
+holidays
+
+# Dev
+pytest
+pytest-asyncio
