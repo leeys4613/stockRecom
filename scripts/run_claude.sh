@@ -1,11 +1,11 @@
 #!/bin/bash
-# cron 무인 실행 래퍼: PROGRESS.md를 읽고 "다음 한 단계"를 진행한다.
-# - 중복 실행 방지(락), 한도/오류로 종료되면 다음 cron 주기에 재시도
-# - 단계 2 완료 시 스스로 cron 항목을 제거하고 종료
+# launchd 무인 실행 래퍼: PROGRESS.md를 읽고 "다음 한 단계"를 진행한다.
+# - 중복 실행 방지(락), 한도/오류로 종료되면 다음 주기(30분)에 재시도
+# - 단계 2 완료 시 스스로 LaunchAgent를 해제하고 종료
 set -u
 
 PROJECT="/Users/iyeongseob/dev/stockRecom"
-CRON_TAG="# stockRecom-autorun"
+AGENT_LABEL="com.stockrecom.autorun"
 LOCKDIR="$PROJECT/.autorun.lock"
 LOGDIR="$PROJECT/logs"
 MAX_RUN_SECONDS=10800   # 1회 실행 상한 3시간
@@ -21,8 +21,8 @@ cd "$PROJECT" || exit 1
 
 # 1) 종료 조건: 단계 2 완료 -> cron 제거
 if grep -q '^- \[x\] \*\*2\. 점수 엔진' PROGRESS.md; then
-  echo "$(ts) 단계 2 완료 확인 -> cron 항목 제거 후 종료" >> "$LOG"
-  crontab -l 2>/dev/null | grep -v "$CRON_TAG" | crontab -
+  echo "$(ts) 단계 2 완료 확인 -> LaunchAgent 해제 후 종료" >> "$LOG"
+  launchctl bootout "gui/$(id -u)/$AGENT_LABEL" >> "$LOG" 2>&1
   exit 0
 fi
 
