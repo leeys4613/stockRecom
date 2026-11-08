@@ -1,6 +1,6 @@
 // 네트워크 우선: 항상 최신 화면을 시도하고, 연결이 안 될 때만 마지막으로 본 화면을 보여준다.
 // (화면 하단의 "화면 생성" 시각으로 오래된 화면인지 알 수 있다)
-const CACHE = 'kms-v1';
+const CACHE = 'kms-v2';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -19,7 +19,8 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin || url.pathname === '/sw.js') return;
+  // /health 는 화면의 온라인 여부 판별용이라 캐시/가로채기 대상에서 제외한다 (캐시되면 오프라인을 못 알아챔)
+  if (url.origin !== self.location.origin || url.pathname === '/sw.js' || url.pathname === '/health') return;
   e.respondWith(
     fetch(req)
       .then((res) => {

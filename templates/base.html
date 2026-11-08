@@ -34,19 +34,36 @@
   ul.news { margin:4px 0 12px; padding-left:18px; font-size:14px; }
   ul.news a { color:inherit; }
   button { padding:8px 14px; }
+  #offline-banner { display:none; background:#d9a000; color:#111; padding:10px 14px; border-radius:8px; margin:10px 0; font-size:14px; }
   footer { color:var(--mut); font-size:12px; margin-top:24px; }
 </style>
 </head>
 <body>
 <h1>K-MacroSight</h1>
+{% set generated = now_kst() %}
+<div id="offline-banner" role="alert" data-generated="{{ generated }}"></div>
 <nav><a href="/" class="{{ 'on' if active == 'dash' }}">대시보드</a><a href="/performance" class="{{ 'on' if active == 'perf' }}">성과 검증</a></nav>
 {% block content %}{% endblock %}
 <footer>개인용 참고 도구이며 투자자문이 아닙니다. 점수는 확률이 아니며 검증 전입니다.
-  <br>화면 생성 {{ now_kst() }} (오프라인이면 마지막으로 본 화면이 보일 수 있습니다)</footer>
+  <br>화면 생성 {{ generated }} (오프라인이면 마지막으로 본 화면이 보일 수 있습니다)</footer>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
   }
+  // 서버에 실제로 닿는지 확인해서, 저장된(오래된) 화면이면 배너로 알린다
+  (function () {
+    var b = document.getElementById('offline-banner');
+    function show(off) {
+      b.style.display = off ? 'block' : 'none';
+      if (off) b.textContent = '서버에 연결할 수 없습니다. 저장된 화면입니다 (생성 ' + b.dataset.generated + '). 최신 정보가 아닙니다.';
+    }
+    function check() {
+      fetch('/health', { cache: 'no-store' }).then(function (r) { show(!r.ok); }).catch(function () { show(true); });
+    }
+    window.addEventListener('online', check);
+    window.addEventListener('offline', function () { show(true); });
+    check();
+  })();
 </script>
 </body>
 </html>

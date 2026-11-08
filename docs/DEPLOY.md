@@ -34,7 +34,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stockrecom.server.pl
 
 ## 4. 점검 체크리스트
 - [x] 폰에서 대시보드가 열린다 (Tailscale 켠 상태) — 2026-11-08 확인, PWA 설치 완료
-- [ ] Tailscale 끈 상태에서는 접속되지 않는다 (외부 비노출 확인)
+- [x] Tailscale 끈 상태에서는 접속되지 않는다 — 2026-11-08 확인 (캐시 화면만 보이고 "지금 갱신"은 연결 불가)
 - [x] "지금 갱신" 후 1~2분 뒤 새로고침하면 점수가 갱신된다
 - [ ] 다음 거래일 07:30 이후 `analyses`에 새 행이 생긴다
 - [ ] 며칠 뒤 `/performance`에서 1일 후 결과가 채워진다

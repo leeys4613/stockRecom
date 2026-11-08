@@ -33,6 +33,15 @@ def test_service_worker_root_scope_and_not_cached():
         assert "fetch" in r.text and "POST" not in r.text  # GET 만 가로챈다
 
 
+def test_sw_never_caches_health_and_page_has_offline_banner():
+    with client() as c:
+        sw = c.get("/sw.js").text
+        assert "pathname === '/health'" in sw  # 온라인 판별용 요청은 캐시하지 않음
+        html = c.get("/").text
+        assert 'id="offline-banner"' in html and "fetch('/health'" in html
+        assert "저장된 화면입니다" in html and "data-generated=" in html
+
+
 def test_pages_link_pwa_and_nav():
     with client() as c:
         for path in ("/", "/performance"):
