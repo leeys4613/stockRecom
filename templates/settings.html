@@ -2,7 +2,7 @@
 {% block content %}
 <h2>점수 가중치 설정</h2>
 <p class="mut">지표별 중요도와 포화 변동률을 조정합니다. 저장하면 <b>새 버전</b>이 만들어져 <b>다음 분석부터</b> 적용되며, 과거 기록은 바뀌지 않습니다.
-  방향(↑우호/↓비우호)은 고정이고, 중요도는 합계가 100%가 되도록 자동 정규화됩니다.
+  방향(오르면 점수 ↑/↓)은 고정이고, 중요도는 합계가 100%가 되도록 자동 정규화됩니다.
   포화 변동률은 "하루 변동이 이 값이면 그 지표 점수가 최대(±1)"가 되는 기준입니다.</p>
 <p class="warn">최근 성과에 맞춰 가중치를 자주 바꾸면 과적합이 됩니다. 버전마다 기준일 30일 이상 쌓은 뒤에 <a href="/performance" style="color:inherit">성과 검증</a>에서 비교하세요.</p>
 
@@ -16,7 +16,7 @@
     {% for r in rows %}
     <tr data-key="{{ r.key }}">
       <td>{{ r.name }}</td>
-      <td>{{ '↑ 우호' if r.direction > 0 else '↓ 비우호' }}</td>
+      <td>{{ '오르면 점수 ↑' if r.direction > 0 else '오르면 점수 ↓' }}</td>
       <td>{{ "{:.1f}".format(r.share) }}%</td>
       <td><input type="number" name="imp_{{ r.key }}" value="{{ '%.1f' % r.share }}" min="0" max="100" step="0.1" required style="width:70px"></td>
       <td><input type="number" name="sat_{{ r.key }}" value="{{ r.sat }}" min="{{ sat_min }}" max="{{ sat_max }}" step="0.1" required style="width:70px"></td>
@@ -41,7 +41,7 @@
 <h2 id="allocation">구간별 주식 비중 규칙</h2>
 <p class="mut">최종 점수가 속한 구간에 따라 권장 주식 비중 범위(나머지는 현금)가 정해집니다. 저장하면 <b>새 버전</b>이 만들어져 다음 분석부터 적용됩니다.
   안전 규칙: 주식 최대는 <b>{{ cap }}%</b>(고정 상한)를 넘을 수 없고, 점수가 낮은 구간일수록 주식 비중이 커질 수 없습니다.
-  구간 이름과 개수는 고정입니다. 이 값은 점수 계산에 영향이 없어 성과 검증 표본이 나뉘지 않습니다.</p>
+  구간 이름("매수 가능성 높음/다소 높음/중립/다소 낮음/낮음")과 개수는 고정입니다. 이 값은 점수 계산에 영향이 없어 성과 검증 표본이 나뉘지 않습니다.</p>
 
 {% if a_saved %}<div class="card" id="a-saved">비중 규칙이 저장되었습니다 (버전 id {{ a_saved }}). 다음 분석부터 적용됩니다.</div>{% endif %}
 {% if a_error %}<div class="card warn" id="a-error">저장 실패: {{ a_error }}</div>{% endif %}
@@ -52,7 +52,7 @@
     <tbody>
     {% for b in bands %}
     <tr data-band="{{ loop.index0 }}">
-      <td>{{ b[1] }}</td>
+      <td>매수 가능성 {{ b[1] }}</td>
       <td>{% if not loop.last %}<input type="number" name="floor_{{ loop.index0 }}" value="{{ b[0] }}" min="1" max="100" step="1" required style="width:64px">{% else %}0 (고정){% endif %}</td>
       <td><input type="number" name="emin_{{ loop.index0 }}" value="{{ b[2] }}" min="0" max="{{ cap }}" step="1" required style="width:64px"></td>
       <td><input type="number" name="emax_{{ loop.index0 }}" value="{{ b[3] }}" min="0" max="{{ cap }}" step="1" required style="width:64px"></td>
@@ -70,7 +70,7 @@
   <thead><tr><th>버전</th><th>생성</th><th>구간 (점수 하한 → 주식 %)</th></tr></thead>
   {% for h in a_history %}
   <tr><td>{{ h.label }}</td><td>{{ h.created_at | kst }}</td>
-    <td style="text-align:left" class="mut">{% for b in h.bands %}{{ b[1] }} {{ b[0] }}↑ {{ b[2] }}~{{ b[3] }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+    <td style="text-align:left" class="mut">{% for b in h.bands %}{{ b[1] }} {{ b[0] }}점↑ {{ b[2] }}~{{ b[3] }}%{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

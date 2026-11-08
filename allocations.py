@@ -18,7 +18,10 @@ class AllocationError(ValueError):
 
 
 def _row(r):
-    return dict(id=r["id"], created_at=r["created_at"], label=r["label"], bands=json.loads(r["bands"]))
+    bands = json.loads(r["bands"])
+    for b, name in zip(bands, LABELS):  # 구간 이름은 고정: 예전에 저장된 이름이 달라도 현재 이름으로 표시
+        b[1] = name
+    return dict(id=r["id"], created_at=r["created_at"], label=r["label"], bands=bands)
 
 
 def get_active(conn):

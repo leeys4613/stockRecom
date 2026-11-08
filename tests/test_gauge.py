@@ -75,11 +75,13 @@ def test_dashboard_renders_gauge_with_band_color_and_label():
         html = c.get("/").text
     assert 'id="gauge"' in html and 'id="needle"' in html
     assert html.count("<path") == 5
-    assert "시장 우호도 점수" in html and "권장 주식 비중" in html
-    assert 'aria-label="시장 우호도 점수' in html
+    assert "매수 가능성 점수" in html and "권장 주식 비중" in html and "매수 가능성" in html
+    assert 'aria-label="매수 가능성 점수' in html
     for color in gauge.BAND_COLORS:
         assert color in html
-    assert "매수" not in html and "매도" not in html  # 투자 지시 문구를 쓰지 않는다
+    # "매수 가능성"(점수 구간 이름)은 쓰되, 행동을 지시하는 문구와 확률(%) 표기는 쓰지 않는다
+    for forbidden in ("매수하세요", "매도", "사세요", "파세요", "지금 매수", "확률 "):
+        assert forbidden not in html.replace("확률이 아님", ""), forbidden
 
 
 def test_dashboard_gauge_without_score():

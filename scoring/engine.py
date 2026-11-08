@@ -1,4 +1,4 @@
-"""규칙 기반 우호도 점수(0~100)와 점수 구간별 비중 규칙. 확률이 아니라 점수다."""
+"""규칙 기반 매수 가능성 점수(0~100)와 점수 구간별 비중 규칙. 확률이 아니라 점수다."""
 import config
 
 
@@ -7,7 +7,7 @@ def _clamp(x, lo=-1.0, hi=1.0):
 
 
 def indicator_score(key, change_pct, saturation=None):
-    """변동률(%) -> -1..+1 (부호는 국장 우호도 방향 반영, 포화 임계값에서 ±1)."""
+    """변동률(%) -> -1..+1 (부호는 점수에 미치는 방향 반영, 포화 임계값에서 ±1)."""
     sat = (saturation or config.SCORE_SATURATION_PCT)[key]
     sign = config.SCORE_DIRECTION[key]
     return sign * _clamp(change_pct / sat)

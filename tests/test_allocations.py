@@ -67,16 +67,16 @@ def test_seed_and_versioning():
 def test_engine_allocation_with_custom_bands_and_boundaries():
     bands = A.validate([80, 60, 50, 35], [40, 30, 20, 10, 0], [60, 50, 40, 25, 10])
     a = engine.allocation(80, bands)          # 경계값은 위 구간
-    assert a["label"] == "우호" and (a["equity_min"], a["equity_max"]) == (40, 60)
+    assert a["label"] == "높음" and (a["equity_min"], a["equity_max"]) == (40, 60)
     assert (a["cash_min"], a["cash_max"]) == (40, 60)
-    assert engine.allocation(79.9, bands)["label"] == "다소 우호"
-    assert engine.allocation(0, bands)["label"] == "비우호"
+    assert engine.allocation(79.9, bands)["label"] == "다소 높음"
+    assert engine.allocation(0, bands)["label"] == "낮음"
     assert engine.allocation(100, bands)["equity_max"] <= config.EQUITY_CAP_PCT
 
 
 def test_engine_cap_is_enforced_even_for_bad_bands():
     # 검증을 우회해 직접 넘겨도 엔진이 상한을 지킨다 (안전 장치 이중화)
-    a = engine.allocation(90, [[0, "우호", 50, 100]])
+    a = engine.allocation(90, [[0, "높음", 50, 100]])
     assert a["equity_max"] == config.EQUITY_CAP_PCT and a["cash_min"] == 100 - config.EQUITY_CAP_PCT
 
 
