@@ -117,6 +117,59 @@ def _days(a, b):
     return (datetime.fromisoformat(b) - datetime.fromisoformat(a)).days
 
 
+def _consecutive_tail(items):
+    """[(분기말, 값)] 오름차순에서 최신 분기까지 끊기지 않고 이어진(분기 누락 없는) 구간만 반환."""
+    if not items:
+        return []
+    tail = [items[-1]]
+    for x in reversed(items[:-1]):
+        if _days(x[0], tail[0][0]) > 120:
+            break
+        tail.insert(0, x)
+    return tail
+
+
+HORIZONS = ((1, "분기"), (2, "2분기"), (3, "3분기"))
+
+
+def growth_trend(values):
+    """증가율의 추세: 1·2·3분기 전 대비 '이번 분기 기준 증가율'과 '직전 분기 기준 증가율'을 비교한다.
+
+    values: 연속 분기의 값(오름차순). 예) 분기 기준: 이번 = 이번/직전분기-1, 직전 = 직전분기/그전분기-1.
+    변화가 -CAPEX_QOQ_DECEL_PP(%p) 보다 작으면 '둔화', +CAPEX_QOQ_DECEL_PP 보다 크면 '가속', 아니면 '유사'.
+    데이터가 모자라 계산할 수 없는 기간은 생략한다.
+    """
+    out = []
+    last = len(values) - 1
+    for h, label in HORIZONS:
+        if last - 1 - h < 0 or not values[last - h] or not values[last - 1 - h]:
+            continue
+        now = (values[last] / values[last - h] - 1) * 100
+        prev = (values[last - 1] / values[last - 1 - h] - 1) * 100
+        d = now - prev
+        verdict = "둔화" if d < -config.CAPEX_QOQ_DECEL_PP else "가속" if d > config.CAPEX_QOQ_DECEL_PP else "유사"
+        out.append(dict(horizon=h, label=label, now=now, prev=prev, delta=d, verdict=verdict))
+    return out
+
+
+def trend_overall(trend):
+    """여러 기간의 판정을 종합한 한 줄. 계산할 기간이 없으면 None."""
+    if not trend:
+        return None
+    n = len(trend)
+    dec = sum(1 for t in trend if t["verdict"] == "둔화")
+    acc = sum(1 for t in trend if t["verdict"] == "가속")
+    if dec == n:
+        return "모든 기간에서 증가율 둔화"
+    if acc == n:
+        return "모든 기간에서 증가율 가속"
+    if dec > acc:
+        return "대체로 증가율 둔화"
+    if acc > dec:
+        return "대체로 증가율 가속"
+    return "혼조(뚜렷한 방향 없음)"
+
+
 def capex_summary(conn):
     """종목별 최신 분기 CAPEX, 전년 동기 대비, 이상치 표시 + 합계(이상 없는 종목만)."""
     per = []
@@ -124,7 +177,7 @@ def capex_summary(conn):
         q = [(r["period_end"], r["capex"]) for r in conn.execute(
             "SELECT period_end,capex FROM capex_quarters WHERE ticker=? ORDER BY period_end", (t,))]
         if not q:
-            per.append(dict(ticker=t, name=config.AI_TICKERS.get(t, (t,))[0], latest=None, flags=[]))
+            per.append(dict(ticker=t, name=config.AI_TICKERS.get(t, (t,))[0], latest=None, flags=[], trend=[], trend_overall=None))
             continue
         d, v = q[-1]
         prev = q[-2] if len(q) >= 2 else None
@@ -136,9 +189,11 @@ def capex_summary(conn):
             ratio = v / prev[1] if prev[1] else None
             if ratio and (ratio >= config.CAPEX_ANOMALY_QOQ or ratio <= 1 / config.CAPEX_ANOMALY_QOQ):
                 flags.append("직전 분기 대비 급변(데이터 확인 필요)")
+        trend = [] if flags else growth_trend([x[1] for x in _consecutive_tail(q)])   # 이상치 종목은 추세를 내지 않는다
         per.append(dict(ticker=t, name=config.AI_TICKERS.get(t, (t,))[0], latest=d, capex=v,
                         yoy=(v / yoy_base[1] - 1) * 100 if yoy_base else None,
-                        qoq=(v / prev[1] - 1) * 100 if prev else None, flags=flags))
+                        qoq=(v / prev[1] - 1) * 100 if prev else None, flags=flags,
+                        trend=trend, trend_overall=trend_overall(trend)))
     # 합계는 이상치가 없는 종목만. 분기 대비(QoQ)가 기본 지표이고 전년 대비(YoY)는 보조다
     clean_q = [p for p in per if p.get("latest") and not p["flags"] and p["qoq"] is not None]
     clean_y = [p for p in per if p.get("latest") and not p["flags"] and p["yoy"] is not None]
@@ -147,7 +202,7 @@ def capex_summary(conn):
         cur = sum(p["capex"] for p in clean_q)
         prev = sum(p["capex"] / (1 + p["qoq"] / 100) for p in clean_q)
         total = dict(n=len(clean_q), capex=cur, qoq=(cur / prev - 1) * 100, period=max(p["latest"] for p in clean_q),
-                     yoy=None, yoy_n=len(clean_y), qoq_history=[])
+                     yoy=None, yoy_n=len(clean_y), qoq_history=[], trend=[], overall=None)
         if clean_y:
             c2 = sum(p["capex"] for p in clean_y)
             b2 = sum(p["capex"] / (1 + p["yoy"] / 100) for p in clean_y)
@@ -155,8 +210,12 @@ def capex_summary(conn):
         # 최근 분기별 합계의 QoQ 흐름(가속/둔화): 모든 대상 종목에 데이터가 있는 분기만 사용
         by_t = {p["ticker"]: dict(conn.execute("SELECT period_end,capex FROM capex_quarters WHERE ticker=? ORDER BY period_end",
                                                (p["ticker"],)).fetchall()) for p in clean_q}
-        common = sorted(set.intersection(*[set(d) for d in by_t.values()]))[-4:]
-        sums = [sum(d[q] for d in by_t.values()) for q in common]
-        total["qoq_history"] = [dict(period=common[i], qoq=(sums[i] / sums[i - 1] - 1) * 100)
-                                for i in range(1, len(common)) if sums[i - 1]]
+        common = sorted(set.intersection(*[set(d) for d in by_t.values()]))
+        # 모든 대상 종목에 데이터가 있고 분기가 끊기지 않은 구간만 사용
+        tail = _consecutive_tail([(qd, sum(d[qd] for d in by_t.values())) for qd in common])
+        sums = [v for _, v in tail]
+        total["qoq_history"] = [dict(period=tail[i][0], qoq=(sums[i] / sums[i - 1] - 1) * 100)
+                                for i in range(max(1, len(tail) - 3), len(tail)) if sums[i - 1]]
+        total["trend"] = growth_trend(sums)
+        total["overall"] = trend_overall(total["trend"])
     return dict(per=per, total=total)

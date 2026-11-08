@@ -72,6 +72,8 @@ def tracker_view(conn):
         hist = cx["qoq_history"]
         decel = len(hist) >= 2 and hist[-1]["qoq"] < hist[-2]["qoq"] - config.CAPEX_QOQ_DECEL_PP
         tail = f" 최근 분기 대비 증가율은 직전({hist[-2]['qoq']:+.0f}%)보다 낮아졌습니다." if decel else ""
+        if cx.get("overall"):
+            tail += f" 분기·2분기·3분기 기준 증가율 추세는 '{cx['overall']}'입니다."
         if q >= config.CAPEX_QOQ_STRONG and dd < -15:
             reading = (f"빅테크 설비투자는 직전 분기보다 {q:+.0f}% 늘고 있지만 AI 대형주는 고점 대비 크게 빠져 있습니다. "
                        f"시장이 투자의 지속성·수익성을 의심하는 상태로 읽힙니다.{tail}")
@@ -95,7 +97,11 @@ def tracker_view(conn):
             build_reading = head + "상당히 조정받고 있어, 건설 속도 우려가 인프라 전반으로 번지는 중간 단계로 읽힙니다."
         else:
             build_reading = head + "크게 약세여서, 데이터센터 건설 속도 둔화 우려가 공급망 전반에 반영된 상태로 읽힙니다."
-    return dict(rows=rows, groups=groups, capex=capex, reading=reading, build_reading=build_reading)
+    cx_total = capex["total"]
+    trend_rows = ([("합계", cx_total["trend"], cx_total["overall"])] if cx_total else []) + \
+                 [(p["ticker"], p["trend"], p["trend_overall"]) for p in capex["per"] if p.get("latest")]
+    return dict(rows=rows, groups=groups, capex=capex, reading=reading, build_reading=build_reading,
+                capex_trend_rows=trend_rows)
 
 
 def tracker_context(view):
@@ -109,11 +115,17 @@ def tracker_context(view):
         "bigtech_capex_total": None if not view["capex"]["total"] else dict(
             quarter=view["capex"]["total"]["period"], usd_bn=round(view["capex"]["total"]["capex"] / 1e9, 1),
             qoq_pct=r1(view["capex"]["total"]["qoq"]), yoy_pct=r1(view["capex"]["total"]["yoy"]),
+            growth_trend=[dict(horizon=t["label"], now_pct=r1(t["now"]), prev_pct=r1(t["prev"]), delta_pp=r1(t["delta"]),
+                               verdict=t["verdict"]) for t in view["capex"]["total"]["trend"]],
+            growth_trend_overall=view["capex"]["total"]["overall"],
             qoq_history=[dict(quarter=h["period"], qoq_pct=r1(h["qoq"])) for h in view["capex"]["total"]["qoq_history"]],
             n=view["capex"]["total"]["n"]),
         "bigtech_capex": [dict(t=p["ticker"], quarter=p.get("latest"), qoq_pct=r1(p.get("qoq")), yoy_pct=r1(p.get("yoy")),
-                               flags=p.get("flags", [])) for p in view["capex"]["per"]],
-        "capex_note": "분기 대비(QoQ)가 기본 지표(투자 속도 변화), 전년 대비(YoY)는 보조",
+                               flags=p.get("flags", []), growth_trend_overall=p.get("trend_overall"),
+                               growth_trend=[dict(horizon=t["label"], now_pct=r1(t["now"]), prev_pct=r1(t["prev"]),
+                                                  verdict=t["verdict"]) for t in p.get("trend", [])])
+                          for p in view["capex"]["per"]],
+        "capex_note": "분기 대비(QoQ)가 기본 지표(투자 속도 변화), 전년 대비(YoY)는 보조. growth_trend 는 1·2·3분기 전 대비 이번 증가율과 직전 증가율의 비교(둔화/가속)",
         "reading": view["reading"],
         "construction_reading": view["build_reading"],
     }

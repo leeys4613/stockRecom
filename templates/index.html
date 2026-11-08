@@ -118,6 +118,13 @@
         <b class="{{ 'up' if cx.qoq >= 0 else 'down' }}">직전 분기 대비 {{ "{:+.0f}".format(cx.qoq) }}%</b>
         {% if cx.qoq_history|length >= 2 %}<span class="mut">· 최근 분기 흐름 {% for h in cx.qoq_history %}{{ "{:+.0f}".format(h.qoq) }}%{% if not loop.last %} → {% endif %}{% endfor %}</span>{% endif %}
         {% if cx.yoy is not none %}<span class="mut">· 전년 대비 {{ "{:+.0f}".format(cx.yoy) }}%</span>{% endif %}
+      {% if cx.trend %}
+      <div id="capex-trend" style="margin-top:6px"><b>증가율 추세</b>
+        <span class="{{ 'down' if '둔화' in cx.overall else 'up' if '가속' in cx.overall else 'mut' }}"><b>{{ cx.overall }}</b></span>
+        <div class="mut" style="margin-top:2px">
+          {% for t in cx.trend %}{{ t.label }} 기준 {{ "{:+.0f}".format(t.now) }}% <span class="mut">(직전 {{ "{:+.0f}".format(t.prev) }}%, {{ "{:+.0f}".format(t.delta) }}%p {{ '↘' if t.verdict == '둔화' else '↗' if t.verdict == '가속' else '→' }})</span>{% if not loop.last %} · {% endif %}{% endfor %}
+        </div></div>
+      {% endif %}
       {% else %}<span class="mut">빅테크 CAPEX 데이터가 아직 없습니다.</span>{% endif %}
     </div>
     <div class="metrics">
@@ -154,7 +161,17 @@
           {% else %}<td colspan="2" class="mut">데이터 없음</td>{% endif %}</tr>
         {% endfor %}
       </table>
-      <div class="mut" style="margin-top:6px">이상치(분기 누락·급변)로 표시된 종목은 합계에서 제외합니다. 데이터: Yahoo Finance.</div>
+      <table id="capex-trend-table" style="margin-top:10px">
+        <thead><tr><th>증가율 추세</th><th>분기</th><th>2분기</th><th>3분기</th></tr></thead>
+        {% for name, tr, ov in tracker.capex_trend_rows %}
+        <tr><td>{{ name }}{% if ov %}<br><span class="mut">{{ ov }}</span>{% endif %}</td>
+          {% for lab in ('분기', '2분기', '3분기') %}{% set it = (tr | selectattr('label', 'equalto', lab) | list | first) if tr else none %}
+          <td>{% if it %}<span class="{{ 'down' if it.verdict == '둔화' else 'up' if it.verdict == '가속' else '' }}">{{ "{:+.0f}".format(it.now) }}%</span>
+            <br><span class="mut">직전 {{ "{:+.0f}".format(it.prev) }}% {{ '↘' if it.verdict == '둔화' else '↗' if it.verdict == '가속' else '→' }}</span>{% else %}<span class="mut">-</span>{% endif %}</td>
+          {% endfor %}</tr>
+        {% endfor %}
+      </table>
+      <div class="mut" style="margin-top:6px">증가율 추세 = 1·2·3분기 전 대비 증가율을 이번 분기 기준과 직전 분기 기준으로 비교(↘ 둔화, ↗ 가속). 이상치(분기 누락·급변)로 표시된 종목은 합계와 추세에서 제외합니다. 데이터: Yahoo Finance.</div>
     </details>
   </div>
 </section>
