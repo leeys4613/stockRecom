@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import BackgroundTasks, FastAPI, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -14,6 +14,7 @@ import config
 import db
 import performance
 import pipeline
+import stockmaster
 import weights as weights_mod
 from scoring import picks as picks_mod
 from collectors import macro, news, reports
@@ -158,16 +159,26 @@ async def settings_allocation_save(request: Request):
 def _watch_ctx(conn, **extra):
     _, evaluated, last = pipeline.top_picks_view(conn)
     return dict(active="watch", items=evaluated, picks_at=last, markets=reports.MARKETS,
+                master=stockmaster.info(conn),
                 max_n=config.WATCHLIST_MAX, min_analysts=config.PICK_MIN_ANALYSTS,
                 flag_text=picks_mod.FLAG_TEXT, error=None, added=None, **extra)
 
 
 @app.get("/watchlist")
-def watchlist_page(request: Request, added: str | None = None):
+def watchlist_page(request: Request, added: str | None = None, master: int | None = None):
     with db.session() as conn:
         ctx = _watch_ctx(conn)
-    ctx["added"] = added
+    ctx["added"], ctx["master_loaded"] = added, master
     return templates.TemplateResponse(request, "watchlist.html", ctx)
+
+
+@app.get("/watchlist/search")
+def watchlist_search(q: str = ""):
+    with db.session() as conn:
+        found = stockmaster.search(conn, q, limit=8)
+    for f in found:
+        f["market_name"] = reports.MARKETS[f["market"]]
+    return JSONResponse(found, headers={"Cache-Control": "no-store"})
 
 
 @app.post("/watchlist/add")
@@ -175,13 +186,34 @@ async def watchlist_add(request: Request):
     form = await request.form()
     try:
         with db.session() as conn:
-            code = reports.add_stock(conn, form.get("code"), form.get("market"), form.get("name"))
+            code, market, name = reports.resolve(conn, form.get("q"), form.get("code"), form.get("market"),
+                                                 form.get("name"))
+            code = reports.add_stock(conn, code, market, name)
     except reports.WatchlistError as e:
         with db.session() as conn:
             ctx = _watch_ctx(conn)
         ctx["error"] = str(e)
         return templates.TemplateResponse(request, "watchlist.html", ctx, status_code=400)
     return RedirectResponse(f"/watchlist?added={code}", status_code=303)
+
+
+@app.post("/watchlist/master")
+async def watchlist_master_upload(request: Request):
+    form = await request.form()
+    up = form.get("file")
+    try:
+        if up is None or not hasattr(up, "read"):
+            raise stockmaster.StockMasterError("파일을 선택하세요")
+        raw = await up.read()
+        rows = stockmaster.parse_file(getattr(up, "filename", ""), raw)
+        with db.session() as conn:
+            n = stockmaster.replace_all(conn, rows)
+    except stockmaster.StockMasterError as e:
+        with db.session() as conn:
+            ctx = _watch_ctx(conn)
+        ctx["error"] = f"종목 목록 업로드 실패: {e}"
+        return templates.TemplateResponse(request, "watchlist.html", ctx, status_code=400)
+    return RedirectResponse(f"/watchlist?master={n}", status_code=303)
 
 
 @app.post("/watchlist/remove")

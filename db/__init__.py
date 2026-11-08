@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS analyses (
     allocation_set_id INTEGER REFERENCES allocation_sets(id)
 );
 
+-- 종목 마스터: 검색(자동완성)용 코드/이름/시장. 기본 내장 40개 + 사용자가 올린 상장법인 목록
+CREATE TABLE IF NOT EXISTS stock_master (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    market TEXT NOT NULL CHECK (market IN ('KS','KQ')),
+    name_norm TEXT NOT NULL,
+    choseong TEXT NOT NULL,
+    source TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- 관심종목 (Top Picks 후보 범위). 사용자가 관리한다.
 CREATE TABLE IF NOT EXISTS watchlist (
     code TEXT PRIMARY KEY,
@@ -131,6 +142,9 @@ def _migrate(conn):
             (datetime.now(timezone.utc).isoformat(timespec="seconds"), "v1 초기안",
              json.dumps([list(b) for b in config.ALLOCATION_BANDS], ensure_ascii=False)))
         conn.execute("UPDATE analyses SET allocation_set_id=1 WHERE allocation_set_id IS NULL")
+    import stockmaster
+
+    stockmaster.seed_if_empty(conn)
 
 
 def init_db(path=None):

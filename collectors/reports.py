@@ -104,25 +104,58 @@ def watchlist(conn):
 
 
 def add_stock(conn, code, market, name, fetcher=None):
-    """검증 후 추가. 먼저 실제로 조회해 보고(첫 스냅샷 저장) 실패하면 추가하지 않는다."""
+    """검증 후 추가. 먼저 실제로 조회해 보고(첫 스냅샷 저장) 실패하면 추가하지 않는다.
+
+    market 이 없으면 KOSPI → KOSDAQ 순으로 조회해 성공한 시장을 쓴다.
+    """
     code = (code or "").strip().upper()
-    market = (market or "").strip().upper()
+    market = (market or "").strip().upper() or None
     name = " ".join((name or "").split())[:20]
     if not CODE_RE.match(code):
         raise WatchlistError("종목 코드는 영문 대문자/숫자 6자리여야 합니다 (예: 005930)")
-    if market not in MARKETS:
+    if market is not None and market not in MARKETS:
         raise WatchlistError("시장은 KOSPI 또는 KOSDAQ 이어야 합니다")
     if conn.execute("SELECT 1 FROM watchlist WHERE code=?", (code,)).fetchone():
         raise WatchlistError("이미 관심종목에 있습니다")
     if conn.execute("SELECT COUNT(*) FROM watchlist").fetchone()[0] >= config.WATCHLIST_MAX:
         raise WatchlistError(f"관심종목은 최대 {config.WATCHLIST_MAX}개입니다")
-    snap = collect_one(code, market, fetcher)
+    snap = None
+    for m in ([market] if market else list(MARKETS)):
+        snap = collect_one(code, m, fetcher)
+        if snap["status"] == "ok":
+            market = m
+            break
     if snap["status"] != "ok":
         raise WatchlistError(f"조회 실패: {snap['error']}")
     conn.execute("INSERT INTO watchlist (code,market,name,added_at) VALUES (?,?,?,?)",
                  (code, market, name or code, now_iso()))
     save(conn, [snap])
     return code
+
+
+def resolve(conn, q, code=None, market=None, name=None):
+    """통합 검색어(종목명 또는 코드) -> (code, market, name). 자동완성에서 고른 경우 code/market 이 함께 온다.
+
+    유일하게 특정되지 않으면 후보를 안내하는 WatchlistError 를 낸다.
+    """
+    import stockmaster
+
+    if code and market:
+        return code, market, name
+    q = " ".join((q or "").split())
+    if not q:
+        raise WatchlistError("종목명이나 종목코드를 입력하세요")
+    cand = stockmaster.search(conn, q, limit=8)
+    exact = [c for c in cand if c["code"] == q.upper() or stockmaster.norm(c["name"]) == stockmaster.norm(q)]
+    pick = exact[0] if len(exact) == 1 else cand[0] if len(cand) == 1 else None
+    if pick:
+        return pick["code"], pick["market"], pick["name"]
+    if not cand:
+        if CODE_RE.match(q.upper()):  # 종목 목록에 없는 코드: 시장을 모르니 KOSPI/KOSDAQ 모두 시도
+            return q.upper(), None, name or None
+        raise WatchlistError(f"'{q}' 검색 결과가 없습니다. 종목 목록에 없을 수 있습니다 (전체 목록 업로드 또는 종목코드 직접 입력)")
+    raise WatchlistError("여러 종목이 검색됩니다. 입력창 아래 후보에서 선택하세요: "
+                         + ", ".join(f"{c['name']}({c['code']})" for c in cand))
 
 
 def remove_stock(conn, code):

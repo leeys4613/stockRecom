@@ -248,7 +248,7 @@ def test_watchlist_add_remove_flow_and_links(monkeypatch):
 @pytest.mark.parametrize("data,msg", [
     (dict(code="12", market="KS", name="x"), "6자리"),
     (dict(code="005930", market="XX", name="x"), "시장"),
-    (dict(market="KS", name="x"), "6자리"),   # code 누락
+    (dict(market="KS", name="x"), "입력하세요"),   # 코드/검색어 모두 누락
 ])
 def test_watchlist_add_rejects_invalid(data, msg):
     with client() as c:

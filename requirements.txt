@@ -26,3 +26,4 @@ holidays
 # Dev
 pytest
 pytest-asyncio
+openpyxl

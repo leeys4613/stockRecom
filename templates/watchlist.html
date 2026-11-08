@@ -8,13 +8,79 @@
 {% if added %}<div class="card" id="added">{{ added }} 추가 완료 (첫 조회 성공). 목표가 추이는 {{ 5 }}일 이상 쌓이면 표시됩니다.</div>{% endif %}
 {% if error %}<div class="card warn" id="error">추가 실패: {{ error }}</div>{% endif %}
 
-<form method="post" action="/watchlist/add" id="add-form">
-  <input type="text" name="code" placeholder="종목코드 6자리 (예: 005930)" maxlength="6" required style="width:11em;padding:8px;text-transform:uppercase">
-  <select name="market" style="padding:8px">{% for k, v in markets.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
-  <input type="text" name="name" placeholder="이름 (예: 삼성전자)" maxlength="20" style="width:9em;padding:8px">
+<style>
+  #suggest { position:absolute; left:0; top:100%; width:70%; max-width:360px; margin:2px 0 0; padding:0; list-style:none;
+             background:var(--card); border:1px solid var(--bd); border-radius:10px; z-index:5; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,.18); }
+  #suggest li { display:flex; justify-content:space-between; gap:12px; padding:11px 14px; cursor:pointer; }
+  #suggest li[aria-selected="true"], #suggest li:hover { background:var(--bd); }
+</style>
+<form method="post" action="/watchlist/add" id="add-form" autocomplete="off" style="position:relative">
+  <input type="text" id="q" name="q" placeholder="종목명 또는 코드 (삼성전자 · 005930 · ㅅㅅㅈㅈ)" maxlength="30" required
+         role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list"
+         style="width:70%;max-width:360px;padding:10px;font-size:16px">
+  <input type="hidden" name="code" id="f-code"><input type="hidden" name="market" id="f-market"><input type="hidden" name="name" id="f-name">
   <button type="submit">추가</button>
-  <span class="mut">최대 {{ max_n }}개 · 추가할 때 실제로 조회해 확인합니다 (몇 초 걸림)</span>
+  <ul id="suggest" role="listbox" hidden></ul>
+  <div class="mut" style="margin-top:6px">이름·코드·초성으로 검색하고 목록에서 고르면 바로 추가됩니다. 최대 {{ max_n }}개 · 추가할 때 실제로 조회해 확인합니다(몇 초 걸림).
+    목록에 없는 종목은 6자리 코드를 그대로 입력하면 KOSPI → KOSDAQ 순으로 조회합니다.</div>
 </form>
+
+<details id="master" style="margin:12px 0">
+  <summary class="mut">종목 목록 {{ master.count }}개 ({{ '기본 내장' if master.source == 'seed' else '업로드' if master.source == 'upload' else '혼합' }}) · 전체 상장 종목으로 확장</summary>
+  <p class="mut">KRX 상장법인 목록 파일을 직접 내려받아 올리면 코스피·코스닥 전체를 검색할 수 있습니다.
+    KIND(kind.krx.co.kr)의 <b>상장법인목록 엑셀 다운로드</b> 또는 KRX 정보데이터시스템의 종목 목록 CSV를 쓰세요.
+    <b>회사명(종목명) · 종목코드 · 시장구분</b> 컬럼이 있는 xlsx / xls / csv를 지원합니다. 앱은 KRX 사이트에 자동으로 접속하지 않습니다.</p>
+  <form method="post" action="/watchlist/master" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".xlsx,.xls,.csv,.html,.htm,.txt" required>
+    <button type="submit">업로드</button>
+  </form>
+</details>
+{% if master_loaded %}<div class="card" id="master-loaded">종목 목록을 {{ master_loaded }}개로 갱신했습니다.</div>{% endif %}
+
+<script>
+(function () {
+  var q = document.getElementById('q'), box = document.getElementById('suggest'), form = document.getElementById('add-form');
+  var fc = document.getElementById('f-code'), fm = document.getElementById('f-market'), fn = document.getElementById('f-name');
+  var items = [], idx = -1, timer = null, seq = 0;
+  function clearSel() { fc.value = ''; fm.value = ''; fn.value = ''; }
+  function close() { box.hidden = true; box.innerHTML = ''; items = []; idx = -1; q.setAttribute('aria-expanded', 'false'); }
+  function choose(i) {
+    var it = items[i]; fc.value = it.code; fm.value = it.market; fn.value = it.name;
+    q.value = it.name + ' (' + it.code + ')'; close(); form.submit();
+  }
+  function render() {
+    box.innerHTML = '';
+    items.forEach(function (it, i) {
+      var li = document.createElement('li'); li.setAttribute('role', 'option'); li.setAttribute('aria-selected', i === idx ? 'true' : 'false');
+      var a = document.createElement('span'); a.textContent = it.name;
+      var b = document.createElement('span'); b.className = 'mut'; b.textContent = it.code + ' · ' + it.market_name;
+      li.appendChild(a); li.appendChild(b);
+      li.addEventListener('pointerdown', function (e) { e.preventDefault(); choose(i); });
+      box.appendChild(li);
+    });
+    box.hidden = !items.length; q.setAttribute('aria-expanded', items.length ? 'true' : 'false');
+  }
+  q.addEventListener('input', function () {
+    clearSel(); clearTimeout(timer);
+    var v = q.value.trim(); if (!v) { close(); return; }
+    timer = setTimeout(function () {
+      var my = ++seq;
+      fetch('/watchlist/search?q=' + encodeURIComponent(v), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (my !== seq) return; items = d; idx = -1; render(); })
+        .catch(close);
+    }, 150);
+  });
+  q.addEventListener('keydown', function (e) {
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); idx = (idx + 1) % items.length; render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); idx = (idx - 1 + items.length) % items.length; render(); }
+    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); choose(idx); }
+    else if (e.key === 'Escape') { close(); }
+  });
+  q.addEventListener('blur', function () { setTimeout(close, 150); });
+})();
+</script>
 
 <form method="post" action="/watchlist/refresh" style="margin:10px 0">
   <button type="submit">컨센서스 지금 갱신</button>
