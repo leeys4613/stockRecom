@@ -29,15 +29,15 @@
 - [x] **2. 점수 엔진**: `scoring/`(변동률→가중 합산→0~100, 점수 구간별 비중 규칙), `tests/`
   - 완료 기준: 단위 테스트 통과
   - ⚠ 가중치/임계값 초기안은 기록하되 **사람 확인 필요**
-- [ ] **3. 뉴스 + LLM + 스케줄러**: `news.py`, `analyzer/llm.py`, APScheduler(거래일 캘린더)
-  - ⚠ Anthropic API 키 필요 (사람이 `.env`에 입력)
+- [x] **3. 뉴스 + LLM + 스케줄러**: `news.py`, `analyzer/llm.py`, APScheduler(거래일 캘린더)
+  - LLM 공급자 교체 구조: 기본 `claude_cli`(Pro 구독, 키 불필요), 선택 `anthropic_api`(키 필요, 실키 미검증)
 - [ ] **4. 예측 기록 + PWA**: 예측 저장, 사후 수익률 채우기, 적중률/Brier, manifest/sw, tailscale serve
 - [ ] **5. 레포트 크롤링**: `reports.py`, Top5 후보군
 - [ ] **6. KIS 연동**: ⚠ 사람 확인 필요 (앱 키, 모의투자, 제공 항목 사전 조사)
 
 ## 다음 할 일
-1. 단계 3은 Anthropic API 키(사람이 `.env`에 입력) 필요 → 사람 확인 후 시작. (이번 실행 범위는 단계 2까지)
-2. 점수 엔진은 아직 대시보드(`main.py`)에 연결되지 않음 — 단계 3/4에서 연결
+1. 단계 4: 예측 기록 + PWA (analyses 테이블은 이미 입력 스냅샷을 저장함 → 사후 수익률 채우기, 적중률/Brier 화면, manifest/sw, tailscale serve)
+2. 서버 상시 실행(launchd) 설정은 단계 4에서 사람과 함께 (현재는 수동 실행: `.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000`)
 
 ## 사람 확인 필요 (무인 실행 시 여기서 멈춤)
 - 점수 가중치 초기안 (`config.py` SCORE_WEIGHTS): SOX +0.30, USDKRW -0.25, US10Y -0.15, USDCNH -0.10, WTI -0.10, USDJPY +0.05, BTC +0.05 (절대값 합 1.0)
@@ -45,6 +45,10 @@
 - USD/CNH 대신 CNY=X 사용해도 되는지
 
 ## 결정 사항 로그
+- 2026-11-08: LLM은 `claude -p`(Pro 구독) 기본, API는 `LLM_PROVIDER=anthropic_api`로 전환. 호출은 `--tools ""`, `--json-schema`, 프로젝트 컨텍스트 차단(cwd=tmp)
+- 2026-11-08: stale/failed 지표는 점수에서 결측 처리 (오래된 값으로 점수 산출 금지)
+- 2026-11-08: LLM 실패 시 보정 0 + 규칙 점수만 표시, 사유 저장. 보정은 스키마+코드에서 ±10 제한. 뉴스 헤드라인은 비신뢰 데이터로 프롬프트에 명시
+- 2026-11-08: /refresh는 백그라운드 실행(LLM이 느림), 동시 실행은 락으로 건너뜀. KRX 휴장일은 공휴일 + 5/1, 12/31
 - 2026-11-01: 확률(%) 대신 우호도 점수 사용, 켈리 보류, 고정 비중 규칙 먼저
 - 2026-11-01: KIS API는 최후순위(6단계)
 - 2026-11-01: Python 3.11은 uv로 venv 구성 (시스템 Python 3.9)

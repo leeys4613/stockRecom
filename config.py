@@ -53,3 +53,31 @@ ALLOCATION_BANDS = [
     (0, "비우호", 0, 15),
 ]
 EQUITY_CAP_PCT = 70  # PRD: 주식 상한 70%
+
+# --- 뉴스 (Google News RSS) ---
+# 주제 key -> (표시명, 검색어)
+NEWS_TOPICS = {
+    "us_macro": ("미국 매크로·연준", "연준 OR 미국 금리 OR 미국채 OR 미국 물가"),
+    "japan": ("일본·BOJ·엔화", "일본은행 OR BOJ OR 엔화 OR 엔캐리"),
+    "korea": ("한국 증시·수급", "코스피 외국인 OR 원달러 환율"),
+    "bitcoin": ("비트코인", "비트코인"),
+}
+NEWS_PER_TOPIC = 5
+NEWS_TIMEOUT_SEC = 15
+
+# --- LLM ---
+# claude_cli: Pro 구독 로그인(`claude -p`) 사용, 키 불필요 / anthropic_api: ANTHROPIC_API_KEY 필요
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "claude_cli")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+CLAUDE_BIN = os.getenv("CLAUDE_BIN", "claude")
+LLM_TIMEOUT_SEC = 180
+LLM_RETRIES = 1  # 검증 실패/일시 오류 시 추가 시도 횟수
+LLM_MAX_ADJUSTMENT = 10  # PRD: LLM 정성 보정 ±10점
+
+# --- 스케줄 (KST, 거래일에만) ---
+SCHEDULER_ENABLED = os.getenv("STOCKRECOM_SCHEDULER", "1") == "1"
+SCHEDULE_TIMES = [(7, 30), (10, 30), (13, 30), (16, 30)]
+TIMEZONE = "Asia/Seoul"
+# 신호등: 점수 >= GREEN 초록, >= YELLOW 노랑, 그 미만 빨강 (PRD 3.3)
+SIGNAL_GREEN = 60
+SIGNAL_YELLOW = 40

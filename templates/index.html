@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>K-MacroSight</title>
 <style>
-  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --mut:#666; --bd:#ddd; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --fg:#e8e8e8; --mut:#999; --bd:#2c3138; } }
+  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --mut:#666; --bd:#ddd; --card:#f6f7f9; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --fg:#e8e8e8; --mut:#999; --bd:#2c3138; --card:#1a1e24; } }
   body { background:var(--bg); color:var(--fg); font-family:-apple-system,sans-serif; max-width:760px; margin:0 auto; padding:16px; }
+  h2 { font-size:16px; margin:24px 0 8px; }
   table { width:100%; border-collapse:collapse; }
   th, td { padding:8px 6px; border-bottom:1px solid var(--bd); text-align:right; }
   th:first-child, td:first-child { text-align:left; }
@@ -15,13 +16,61 @@
   .badge { font-size:12px; padding:2px 8px; border-radius:10px; color:#fff; }
   .fresh { background:#2a9d4a; } .stale { background:#d9a000; } .failed { background:#d33; } .none { background:#888; }
   .err { color:var(--mut); font-size:12px; text-align:left; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:14px 16px; margin:12px 0; }
+  .score { font-size:44px; font-weight:700; line-height:1; }
+  .sig-green .score { color:#2a9d4a; } .sig-yellow .score { color:#d9a000; } .sig-red .score { color:#d33; }
+  .mut { color:var(--mut); font-size:12px; }
+  .warn { color:#d9a000; font-size:13px; }
+  ul.lines { margin:6px 0; padding-left:18px; }
+  ul.news { margin:4px 0 12px; padding-left:18px; font-size:14px; }
+  ul.news a { color:inherit; }
   button { padding:8px 14px; }
   footer { color:var(--mut); font-size:12px; margin-top:24px; }
 </style>
 </head>
 <body>
 <h1>K-MacroSight</h1>
-<form method="post" action="/refresh"><button type="submit">지금 갱신</button></form>
+<form method="post" action="/refresh"><button type="submit">지금 갱신</button>
+  <span class="mut">수집·분석은 백그라운드로 진행됩니다. 잠시 후 새로고침하세요.</span></form>
+
+<section id="analysis">
+{% if not analysis %}
+  <div class="card">아직 분석 결과가 없습니다. "지금 갱신"을 눌러 주세요.</div>
+{% else %}
+  <div class="card sig-{{ analysis.signal or 'none' }}">
+    <div class="mut">시장 우호도 점수 (확률이 아님) · {{ analysis.created_at | kst }} 기준</div>
+    {% if analysis.final_score is not none %}
+      <div class="score">{{ "{:.0f}".format(analysis.final_score) }}<span class="mut"> / 100</span></div>
+      <div class="mut">규칙 점수 {{ "{:.1f}".format(analysis.base_score) }}
+        {% if analysis.llm_status == 'ok' %}· AI 보정 {{ "{:+d}".format(analysis.adjustment) }}{% endif %}
+        · 지표 반영률 {{ "{:.0f}".format(analysis.coverage * 100) }}%</div>
+      {% if analysis.allocation %}
+      <div style="margin-top:8px">{{ analysis.allocation.label }} 구간 · 권장 주식 비중
+        <b>{{ analysis.allocation.equity_min }}~{{ analysis.allocation.equity_max }}%</b>,
+        현금 {{ analysis.allocation.cash_min }}~{{ analysis.allocation.cash_max }}%</div>
+      {% endif %}
+    {% else %}
+      <div class="warn">점수를 계산할 수 있는 최신 지표가 없습니다.</div>
+    {% endif %}
+    {% if analysis.missing %}
+      <div class="warn">결측/오래된 지표(점수에서 제외): {{ analysis.missing | join(', ') }}</div>
+    {% endif %}
+  </div>
+
+  {% if analysis.llm_status == 'ok' %}
+  <div class="card" id="summary">
+    <b>AI 3줄 요약</b>
+    <ul class="lines">{% for line in analysis.summary %}<li>{{ line }}</li>{% endfor %}</ul>
+    <div class="mut">{{ analysis.risk_comment }}</div>
+  </div>
+  {% else %}
+  <div class="card warn" id="summary">AI 분석을 사용할 수 없어 규칙 점수만 표시합니다.
+    <div class="mut">{{ analysis.error }}</div></div>
+  {% endif %}
+{% endif %}
+</section>
+
+<h2>매크로 지표</h2>
 <table id="macro">
   <thead><tr><th>지표</th><th>현재값</th><th>전일비</th><th>상태</th></tr></thead>
   <tbody>
@@ -34,11 +83,30 @@
     <td><span class="badge {{ r.freshness }}">{{ {'fresh':'최신','stale':'오래됨','failed':'수집 실패','none':'데이터 없음'}[r.freshness] }}</span></td>
   </tr>
   {% if r.freshness == 'failed' %}
-  <tr><td colspan="4" class="err">{{ r.attempted_at }} 실패: {{ r.error }}{% if r.ok_at %} (마지막 성공 {{ r.ok_at }}){% endif %}</td></tr>
+  <tr><td colspan="4" class="err">{{ r.attempted_at | kst }} 실패: {{ r.error }}{% if r.ok_at %} (마지막 성공 {{ r.ok_at | kst }}){% endif %}</td></tr>
   {% endif %}
   {% endfor %}
   </tbody>
 </table>
-<footer>개인용 참고 도구이며 투자자문이 아닙니다.</footer>
+
+<h2>뉴스 헤드라인</h2>
+<section id="news">
+{% for n in news %}
+  <div><b>{{ n.name }}</b>
+    {% if n.status == 'failed' %}<span class="badge failed">수집 실패</span>
+      <span class="mut">{{ n.error }}{% if n.ok_at %} (마지막 성공 {{ n.ok_at | kst }}){% endif %}</span>
+    {% elif n.status == 'none' %}<span class="badge none">데이터 없음</span>
+    {% else %}<span class="mut">{{ n.ok_at | kst }}</span>{% endif %}
+  </div>
+  <ul class="news">
+  {% for i in n.headlines %}
+    <li>{% if i.link %}<a href="{{ i.link }}" target="_blank" rel="noopener noreferrer">{{ i.title }}</a>{% else %}{{ i.title }}{% endif %}
+      {% if i.source %}<span class="mut"> · {{ i.source }}</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+{% endfor %}
+</section>
+
+<footer>개인용 참고 도구이며 투자자문이 아닙니다. 점수는 확률이 아니며 검증 전입니다.</footer>
 </body>
 </html>
