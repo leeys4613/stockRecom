@@ -10,6 +10,7 @@ import calendar_kr
 import config
 import db
 import allocations
+import gauge
 import performance
 import weights as weights_mod
 from analyzer import llm
@@ -112,6 +113,7 @@ def latest_analysis(conn):
     aset = (allocations.get(conn, d.get("allocation_set_id")) if d.get("allocation_set_id")
             else None) or allocations.get_active(conn)
     d["allocation_label"] = aset["label"]
+    d["gauge"] = gauge.build(d["final_score"], aset["bands"], d["base_score"])
     d["allocation"] = (engine.allocation(d["final_score"], aset["bands"])
                        if d["final_score"] is not None else None)
     s = d["final_score"]

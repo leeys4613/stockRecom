@@ -7,21 +7,40 @@
 {% if not analysis %}
   <div class="card">아직 분석 결과가 없습니다. "지금 갱신"을 눌러 주세요.</div>
 {% else %}
-  <div class="card sig-{{ analysis.signal or 'none' }}">
+  {% set g = analysis.gauge %}
+  <div class="card" id="score-card">
     <div class="mut">시장 우호도 점수 (확률이 아님) · {{ analysis.created_at | kst }} 기준</div>
+    <svg id="gauge" viewBox="0 0 200 112" role="img" style="width:100%;max-width:340px;display:block;margin:6px auto 0"
+         aria-label="시장 우호도 점수 {% if analysis.final_score is not none %}{{ '%.0f' % analysis.final_score }}점, {{ g.label }} 구간{% else %}없음{% endif %}">
+      {% for seg in g.segments %}
+      <path d="{{ seg.path }}" fill="{{ seg.color }}" stroke="var(--card)" stroke-width="2"
+            {% if g.band_index is not none and loop.index0 != g.band_index %}opacity="0.45"{% endif %}><title>{{ seg.label }} ({{ seg.floor }}점 이상)</title></path>
+      {% endfor %}
+      {% if g.base_tick %}<line x1="{{ g.base_tick.x0 }}" y1="{{ g.base_tick.y0 }}" x2="{{ g.base_tick.x1 }}" y2="{{ g.base_tick.y1 }}"
+            stroke="currentColor" stroke-width="2" opacity="0.6"><title>규칙 점수 {{ '%.1f' % analysis.base_score }}</title></line>{% endif %}
+      {% if g.needle %}
+      <line id="needle" x1="{{ g.cx }}" y1="{{ g.cy }}" x2="{{ g.needle.x }}" y2="{{ g.needle.y }}" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="{{ g.cx }}" cy="{{ g.cy }}" r="6" fill="currentColor"/>
+      {% endif %}
+      <text x="12" y="110" font-size="9" fill="currentColor" opacity="0.7">비우호</text>
+      <text x="188" y="110" font-size="9" fill="currentColor" opacity="0.7" text-anchor="end">우호</text>
+    </svg>
     {% if analysis.final_score is not none %}
-      <div class="score">{{ "{:.0f}".format(analysis.final_score) }}<span class="mut"> / 100</span></div>
-      <div class="mut">규칙 점수 {{ "{:.1f}".format(analysis.base_score) }}
+      <div style="text-align:center">
+        <div class="score" style="color:{{ g.color }}">{{ "{:.0f}".format(analysis.final_score) }}<span class="mut"> / 100</span></div>
+        <div style="font-weight:600;color:{{ g.color }}">{{ g.label }}</div>
+      </div>
+      <div class="mut" style="text-align:center">규칙 점수 {{ "{:.1f}".format(analysis.base_score) }}
         {% if analysis.llm_status == 'ok' %}· AI 보정 {{ "{:+d}".format(analysis.adjustment) }}{% endif %}
         · 지표 반영률 {{ "{:.0f}".format(analysis.coverage * 100) }}%
         {% if analysis.weight_label %}· 가중치 {{ analysis.weight_label }}{% endif %}</div>
       {% if analysis.allocation %}
-      <div style="margin-top:8px">{{ analysis.allocation.label }} 구간 ({{ analysis.allocation_label }}) · 권장 주식 비중
+      <div style="margin-top:8px;text-align:center">{{ analysis.allocation.label }} 구간 ({{ analysis.allocation_label }}) · 권장 주식 비중
         <b>{{ analysis.allocation.equity_min }}~{{ analysis.allocation.equity_max }}%</b>,
         현금 {{ analysis.allocation.cash_min }}~{{ analysis.allocation.cash_max }}%</div>
       {% endif %}
     {% else %}
-      <div class="warn">점수를 계산할 수 있는 최신 지표가 없습니다.</div>
+      <div class="warn" style="text-align:center">점수를 계산할 수 있는 최신 지표가 없습니다.</div>
     {% endif %}
     {% if analysis.missing %}
       <div class="warn">결측/오래된 지표(점수에서 제외): {{ analysis.missing | join(', ') }}</div>
