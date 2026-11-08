@@ -14,8 +14,8 @@ import gauge
 import performance
 import weights as weights_mod
 from analyzer import llm
-from collectors import macro, news
-from scoring import engine
+from collectors import macro, news, reports
+from scoring import engine, picks
 
 _lock = threading.Lock()
 
@@ -131,3 +131,22 @@ def scheduled_job():
     if not calendar_kr.is_trading_day(calendar_kr.today_kst()):
         return None
     return run_once()
+
+
+def run_reports(fetcher=None, delay=None):
+    """관심종목 컨센서스 스냅샷 (하루 1회 + 수동). 이미 실행 중이면 None."""
+    return reports.collect_watchlist(db.session, fetcher, delay)
+
+
+def scheduled_reports_job():
+    if not calendar_kr.is_trading_day(calendar_kr.today_kst()):
+        return None
+    return run_reports()
+
+
+def top_picks_view(conn, now=None):
+    """(Top Picks, 전체 평가 목록, 최신 수집 시각)."""
+    rows = reports.stock_rows(conn)
+    top, evaluated = picks.top_picks(rows, now)
+    last = max((r["ok"]["fetched_at"] for r in rows if r["ok"]), default=None)
+    return top, evaluated, last

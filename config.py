@@ -84,3 +84,18 @@ TIMEZONE = "Asia/Seoul"
 # 신호등: 점수 >= GREEN 초록, >= YELLOW 노랑, 그 미만 빨강 (PRD 3.3)
 SIGNAL_GREEN = 60
 SIGNAL_YELLOW = 40
+
+
+# --- 증권사 컨센서스 / Top Picks (yfinance, 크롤링 없음) ---
+# 네이버 증권·한경컨센서스는 robots.txt 가 전체 자동 수집을 금지(Disallow: /)하므로 사용하지 않는다.
+REPORTS_DELAY_SEC = 0.6          # 종목 간 조회 간격 (예의상 요청 속도 제한)
+WATCHLIST_MAX = 50
+REPORTS_SCHEDULE = (16, 40)      # 거래일 장 마감 후 하루 1회 스냅샷
+PICK_TOP_N = 5
+PICK_MIN_ANALYSTS = 5            # 애널리스트 수가 이보다 적으면 후보 제외
+PICK_STALE_DAYS = 3              # 스냅샷이 이보다 오래되면 후보 제외 (주말 감안)
+PICK_MAX_UPSIDE = 1.0            # 목표가 괴리율이 +100% 를 넘으면 데이터 이상으로 보고 제외
+PICK_TREND_MIN_DAYS = 5          # 목표가 추이는 이 일수 이상 지난 스냅샷과 비교
+PICK_UPSIDE_SAT = 0.5            # 괴리율 +50% 에서 포화
+PICK_TREND_SAT = 0.10            # 목표가 변화 +10% 에서 포화
+PICK_WEIGHTS = {"upside": 0.40, "opinion": 0.35, "trend": 0.25}

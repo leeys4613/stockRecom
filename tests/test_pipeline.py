@@ -90,6 +90,15 @@ def test_scheduled_job_skips_non_trading_day(monkeypatch):
     assert pipeline.scheduled_job() is None
 
 
-def test_scheduler_has_four_jobs_at_configured_times():
+def test_scheduler_jobs_analysis_times_plus_daily_reports():
     s = main.build_scheduler()
-    assert len(s.get_jobs()) == len(config.SCHEDULE_TIMES) == 4
+    ids = {j.id for j in s.get_jobs()}
+    assert len(config.SCHEDULE_TIMES) == 4
+    assert {f"analysis-{h:02d}{m:02d}" for h, m in config.SCHEDULE_TIMES} <= ids
+    assert "reports-daily" in ids and len(ids) == 5
+
+
+def test_reports_job_skips_non_trading_day(monkeypatch):
+    monkeypatch.setattr(calendar_kr, "today_kst", lambda: date(2026, 11, 8))  # 일요일
+    monkeypatch.setattr(pipeline, "run_reports", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    assert pipeline.scheduled_reports_job() is None

@@ -2,6 +2,7 @@ import pytest
 
 import config
 import performance
+from collectors import reports
 
 
 @pytest.fixture(autouse=True)
@@ -14,6 +15,11 @@ def isolated(tmp_path, monkeypatch):
     def no_network():
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(performance, "kospi_closes", no_network)
+
+    def no_symbol_network(sym):
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(reports, "yf_fetch", no_symbol_network)
+    monkeypatch.setattr(config, "REPORTS_DELAY_SEC", 0)
 
 
 RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
@@ -46,3 +52,12 @@ class FakeProvider:
 
 
 GOOD = {"summary_3lines": ["a", "b", "c"], "adjustment": 4, "risk_comment": "리스크"}
+
+
+def consensus(price=100.0, target=130.0, rec=1.8, n=12, **over):
+    """reports.collect_one 용 가짜 fetcher 결과."""
+    d = dict(price=price, target_mean=target, target_high=target * 1.3, target_low=target * 0.8,
+             target_median=target, rec_mean=rec, rec_key="buy", n_analysts=n,
+             strong_buy=4, buy=6, hold=2, sell=0, strong_sell=0)
+    d.update(over)
+    return d

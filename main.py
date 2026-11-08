@@ -15,7 +15,8 @@ import db
 import performance
 import pipeline
 import weights as weights_mod
-from collectors import macro, news
+from scoring import picks as picks_mod
+from collectors import macro, news, reports
 
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 
@@ -40,6 +41,9 @@ def build_scheduler():
         sched.add_job(pipeline.scheduled_job, CronTrigger(hour=hour, minute=minute),
                       id=f"analysis-{hour:02d}{minute:02d}", coalesce=True,
                       max_instances=1, misfire_grace_time=1800)
+    sched.add_job(pipeline.scheduled_reports_job,
+                  CronTrigger(hour=config.REPORTS_SCHEDULE[0], minute=config.REPORTS_SCHEDULE[1]),
+                  id="reports-daily", coalesce=True, max_instances=1, misfire_grace_time=3600)
     return sched
 
 
@@ -69,8 +73,10 @@ def health():
 @app.get("/")
 def index(request: Request):
     with db.session() as conn:
+        top, _, picks_at = pipeline.top_picks_view(conn)
         ctx = dict(active="dash", rows=macro.latest(conn), news=news.latest(conn),
-                   analysis=pipeline.latest_analysis(conn))
+                   analysis=pipeline.latest_analysis(conn), picks=top, picks_at=picks_at,
+                   watch_count=len(reports.watchlist(conn)))
     return templates.TemplateResponse(request, "index.html", ctx)
 
 
@@ -147,6 +153,49 @@ async def settings_allocation_save(request: Request):
         ctx["a_error"] = str(e)
         return templates.TemplateResponse(request, "settings.html", ctx, status_code=400)
     return RedirectResponse(f"/settings?a_saved={new_id}#allocation", status_code=303)
+
+
+def _watch_ctx(conn, **extra):
+    _, evaluated, last = pipeline.top_picks_view(conn)
+    return dict(active="watch", items=evaluated, picks_at=last, markets=reports.MARKETS,
+                max_n=config.WATCHLIST_MAX, min_analysts=config.PICK_MIN_ANALYSTS,
+                flag_text=picks_mod.FLAG_TEXT, error=None, added=None, **extra)
+
+
+@app.get("/watchlist")
+def watchlist_page(request: Request, added: str | None = None):
+    with db.session() as conn:
+        ctx = _watch_ctx(conn)
+    ctx["added"] = added
+    return templates.TemplateResponse(request, "watchlist.html", ctx)
+
+
+@app.post("/watchlist/add")
+async def watchlist_add(request: Request):
+    form = await request.form()
+    try:
+        with db.session() as conn:
+            code = reports.add_stock(conn, form.get("code"), form.get("market"), form.get("name"))
+    except reports.WatchlistError as e:
+        with db.session() as conn:
+            ctx = _watch_ctx(conn)
+        ctx["error"] = str(e)
+        return templates.TemplateResponse(request, "watchlist.html", ctx, status_code=400)
+    return RedirectResponse(f"/watchlist?added={code}", status_code=303)
+
+
+@app.post("/watchlist/remove")
+async def watchlist_remove(request: Request):
+    form = await request.form()
+    with db.session() as conn:
+        reports.remove_stock(conn, form.get("code"))
+    return RedirectResponse("/watchlist", status_code=303)
+
+
+@app.post("/watchlist/refresh")
+def watchlist_refresh(background: BackgroundTasks):
+    background.add_task(pipeline.run_reports)
+    return RedirectResponse("/watchlist", status_code=303)
 
 
 @app.get("/manifest.webmanifest")

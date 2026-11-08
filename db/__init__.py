@@ -69,6 +69,27 @@ CREATE TABLE IF NOT EXISTS analyses (
     allocation_set_id INTEGER REFERENCES allocation_sets(id)
 );
 
+-- 관심종목 (Top Picks 후보 범위). 사용자가 관리한다.
+CREATE TABLE IF NOT EXISTS watchlist (
+    code TEXT PRIMARY KEY,
+    market TEXT NOT NULL CHECK (market IN ('KS','KQ')),
+    name TEXT NOT NULL,
+    added_at TEXT NOT NULL
+);
+
+-- 증권사 컨센서스 일별 스냅샷 (목표가 추이를 직접 계산하기 위해 계속 쌓는다)
+CREATE TABLE IF NOT EXISTS consensus_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ok','failed')),
+    error TEXT,
+    fetched_at TEXT NOT NULL,
+    price REAL, target_mean REAL, target_high REAL, target_low REAL, target_median REAL,
+    rec_mean REAL, rec_key TEXT, n_analysts INTEGER,
+    strong_buy INTEGER, buy INTEGER, hold INTEGER, sell INTEGER, strong_sell INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_cons_code_time ON consensus_snapshots(code, fetched_at);
+
 -- 예측 사후 결과: 기준 종가(분석 시점에 알려진 마지막 KOSPI 종가) 대비 1/5 거래일 후 수익률
 CREATE TABLE IF NOT EXISTS outcomes (
     analysis_id INTEGER PRIMARY KEY REFERENCES analyses(id),

@@ -91,6 +91,27 @@
 {% endif %}
 </section>
 
+<section id="picks">
+  <h2>증권사 컨센서스 Top Picks</h2>
+  {% if not watch_count %}
+    <div class="card mut">관심종목을 추가하면 증권사 컨센서스 기반 Top Picks가 여기에 표시됩니다. <a href="/watchlist" style="color:inherit">관심종목 추가 →</a></div>
+  {% elif not picks %}
+    <div class="card mut">조건을 충족하는 후보가 없습니다 (최신 데이터 · 애널리스트 {{ 5 }}명 이상 · 정상 범위 괴리). <a href="/watchlist" style="color:inherit">관심종목 상태 보기 →</a></div>
+  {% else %}
+    {% for p in picks %}
+    <div class="card pick" data-code="{{ p.code }}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <b>{{ loop.index }}. {{ p.name }}</b><span class="mut">{{ p.code }}.{{ p.market }} · 컨센서스 점수 {{ "{:.0f}".format(p.score) }}</span></div>
+      <div>{{ "{:,.0f}".format(p.snap.price) }} → 목표가 평균 {{ "{:,.0f}".format(p.snap.target_mean) }}
+        <b class="up">({{ "{:+.0f}".format(p.upside * 100) }}%)</b></div>
+      <div class="mut">의견 평균 {{ "{:.1f}".format(p.snap.rec_mean) if p.snap.rec_mean else '-' }} ({{ p.opinion or '-' }}) · 애널리스트 {{ p.snap.n_analysts }}명 ·
+        목표가 추이 {% if p.trend is not none %}{{ "{:+.1f}".format(p.trend * 100) }}% ({{ "{:.0f}".format(p.trend_days) }}일간){% else %}축적 중{% endif %}</div>
+    </div>
+    {% endfor %}
+  {% endif %}
+  <div class="mut">Yahoo Finance 컨센서스 기반{% if picks_at %} · 수집 {{ picks_at | kst }}{% endif %}. 증권사 의견은 후행적이고 낙관 편향이 있으며 <b>매수 추천이 아닙니다</b>.</div>
+</section>
+
 <h2>매크로 지표</h2>
 <table id="macro">
   <thead><tr><th>지표</th><th>현재값</th><th>전일비</th><th>상태</th></tr></thead>
