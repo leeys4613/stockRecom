@@ -40,12 +40,16 @@ def compute_score(changes, weights=None, saturation=None):
                 contributions=contributions, coverage=used / total)
 
 
-def allocation(score):
-    """점수 -> (라벨, 주식 최소%, 주식 최대%, 현금 최소%, 현금 최대%). 합계 100 보정."""
+def allocation(score, bands=None):
+    """점수 -> (라벨, 주식 최소%, 주식 최대%, 현금 최소%, 현금 최대%). 합계 100 보정.
+
+    bands: [(점수 하한, 라벨, 주식 최소, 주식 최대), ...] 하한 내림차순. 없으면 config 기본값.
+    주식 상한(EQUITY_CAP_PCT)은 어떤 규칙에서도 넘지 않는 안전 장치다.
+    """
     if score is None:
         raise ValueError("score is None")
     score = _clamp(score, 0, 100)
-    for floor, label, lo, hi in config.ALLOCATION_BANDS:
+    for floor, label, lo, hi in (bands or config.ALLOCATION_BANDS):
         if score >= floor:
             break
     hi = min(hi, config.EQUITY_CAP_PCT)

@@ -37,4 +37,40 @@
     <td style="text-align:left" class="mut">{% for k, w in h.weights.items() %}{{ indicators[k][0] }} {{ "{:+.0f}".format(w * 100) }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
   {% endfor %}
 </table>
+
+<h2 id="allocation">구간별 주식 비중 규칙</h2>
+<p class="mut">최종 점수가 속한 구간에 따라 권장 주식 비중 범위(나머지는 현금)가 정해집니다. 저장하면 <b>새 버전</b>이 만들어져 다음 분석부터 적용됩니다.
+  안전 규칙: 주식 최대는 <b>{{ cap }}%</b>(고정 상한)를 넘을 수 없고, 점수가 낮은 구간일수록 주식 비중이 커질 수 없습니다.
+  구간 이름과 개수는 고정입니다. 이 값은 점수 계산에 영향이 없어 성과 검증 표본이 나뉘지 않습니다.</p>
+
+{% if a_saved %}<div class="card" id="a-saved">비중 규칙이 저장되었습니다 (버전 id {{ a_saved }}). 다음 분석부터 적용됩니다.</div>{% endif %}
+{% if a_error %}<div class="card warn" id="a-error">저장 실패: {{ a_error }}</div>{% endif %}
+
+<form method="post" action="/settings/allocation">
+  <table id="bands">
+    <thead><tr><th>구간</th><th>점수 하한 (이상)</th><th>주식 최소 (%)</th><th>주식 최대 (%)</th></tr></thead>
+    <tbody>
+    {% for b in bands %}
+    <tr data-band="{{ loop.index0 }}">
+      <td>{{ b[1] }}</td>
+      <td>{% if not loop.last %}<input type="number" name="floor_{{ loop.index0 }}" value="{{ b[0] }}" min="1" max="100" step="1" required style="width:64px">{% else %}0 (고정){% endif %}</td>
+      <td><input type="number" name="emin_{{ loop.index0 }}" value="{{ b[2] }}" min="0" max="{{ cap }}" step="1" required style="width:64px"></td>
+      <td><input type="number" name="emax_{{ loop.index0 }}" value="{{ b[3] }}" min="0" max="{{ cap }}" step="1" required style="width:64px"></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p><input type="text" name="note" maxlength="40" placeholder="메모 (예: 중립 구간 보수적으로)" style="width:100%;box-sizing:border-box;padding:8px"></p>
+  <button type="submit">비중 규칙 새 버전으로 저장</button>
+  <span class="mut">현재 적용 중: {{ a_current.label }}</span>
+</form>
+
+<h2>비중 규칙 버전 기록</h2>
+<table id="a-history">
+  <thead><tr><th>버전</th><th>생성</th><th>구간 (점수 하한 → 주식 %)</th></tr></thead>
+  {% for h in a_history %}
+  <tr><td>{{ h.label }}</td><td>{{ h.created_at | kst }}</td>
+    <td style="text-align:left" class="mut">{% for b in h.bands %}{{ b[1] }} {{ b[0] }}↑ {{ b[2] }}~{{ b[3] }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+  {% endfor %}
+</table>
 {% endblock %}

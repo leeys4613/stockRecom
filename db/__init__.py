@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS weight_sets (
     saturation TEXT NOT NULL    -- JSON {key: 포화 변동률(%)}
 );
 
+-- 구간별 주식 비중 규칙: 불변 버전. 가장 큰 id 가 현재 적용 버전. (점수 계산과 무관하므로 가중치와 별도 버전)
+CREATE TABLE IF NOT EXISTS allocation_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    label TEXT NOT NULL,
+    bands TEXT NOT NULL         -- JSON [[점수하한, 라벨, 주식최소%, 주식최대%], ...] 점수 하한 내림차순
+);
+
 CREATE TABLE IF NOT EXISTS analyses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL,
@@ -57,7 +65,8 @@ CREATE TABLE IF NOT EXISTS analyses (
     risk_comment TEXT,
     error TEXT,
     inputs TEXT,         -- JSON: LLM에 준 입력 스냅샷 (사후 검증용)
-    weight_set_id INTEGER REFERENCES weight_sets(id)
+    weight_set_id INTEGER REFERENCES weight_sets(id),
+    allocation_set_id INTEGER REFERENCES allocation_sets(id)
 );
 
 -- 예측 사후 결과: 기준 종가(분석 시점에 알려진 마지막 KOSPI 종가) 대비 1/5 거래일 후 수익률
@@ -93,6 +102,14 @@ def _migrate(conn):
              json.dumps(config.SCORE_WEIGHTS), json.dumps(config.SCORE_SATURATION_PCT)))
         # 이 시점까지 쌓인 분석은 모두 초기안으로 계산된 것이다
         conn.execute("UPDATE analyses SET weight_set_id=1 WHERE weight_set_id IS NULL")
+    if "allocation_set_id" not in cols:
+        conn.execute("ALTER TABLE analyses ADD COLUMN allocation_set_id INTEGER REFERENCES allocation_sets(id)")
+    if conn.execute("SELECT COUNT(*) FROM allocation_sets").fetchone()[0] == 0:
+        conn.execute(
+            "INSERT INTO allocation_sets (created_at,label,bands) VALUES (?,?,?)",
+            (datetime.now(timezone.utc).isoformat(timespec="seconds"), "v1 초기안",
+             json.dumps([list(b) for b in config.ALLOCATION_BANDS], ensure_ascii=False)))
+        conn.execute("UPDATE analyses SET allocation_set_id=1 WHERE allocation_set_id IS NULL")
 
 
 def init_db(path=None):

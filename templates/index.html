@@ -16,7 +16,7 @@
         · 지표 반영률 {{ "{:.0f}".format(analysis.coverage * 100) }}%
         {% if analysis.weight_label %}· 가중치 {{ analysis.weight_label }}{% endif %}</div>
       {% if analysis.allocation %}
-      <div style="margin-top:8px">{{ analysis.allocation.label }} 구간 · 권장 주식 비중
+      <div style="margin-top:8px">{{ analysis.allocation.label }} 구간 ({{ analysis.allocation_label }}) · 권장 주식 비중
         <b>{{ analysis.allocation.equity_min }}~{{ analysis.allocation.equity_max }}%</b>,
         현금 {{ analysis.allocation.cash_min }}~{{ analysis.allocation.cash_max }}%</div>
       {% endif %}

@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import allocations
 import config
 import db
 import performance
@@ -98,16 +99,19 @@ def _settings_ctx(conn, **extra):
     rows = [dict(key=k, name=name, direction=config.SCORE_DIRECTION[k],
                  share=abs(active["weights"][k]) * 100, sat=active["saturation"][k])
             for k, (name, _) in config.MACRO_INDICATORS.items()]
+    a_active = allocations.get_active(conn)
     return dict(active="settings", rows=rows, current=active, history=weights_mod.list_all(conn),
                 indicators=config.MACRO_INDICATORS, sat_min=weights_mod.SAT_MIN,
-                sat_max=weights_mod.SAT_MAX, error=None, saved=None, **extra)
+                sat_max=weights_mod.SAT_MAX, error=None, saved=None,
+                bands=a_active["bands"], a_current=a_active, a_history=allocations.list_all(conn),
+                cap=config.EQUITY_CAP_PCT, a_error=None, a_saved=None, **extra)
 
 
 @app.get("/settings")
-def settings_page(request: Request, saved: int | None = None):
+def settings_page(request: Request, saved: int | None = None, a_saved: int | None = None):
     with db.session() as conn:
         ctx = _settings_ctx(conn)
-    ctx["saved"] = saved
+    ctx["saved"], ctx["a_saved"] = saved, a_saved
     return templates.TemplateResponse(request, "settings.html", ctx)
 
 
@@ -126,6 +130,23 @@ async def settings_save(request: Request):
         ctx["error"] = str(e)
         return templates.TemplateResponse(request, "settings.html", ctx, status_code=400)
     return RedirectResponse(f"/settings?saved={new_id}", status_code=303)
+
+
+@app.post("/settings/allocation")
+async def settings_allocation_save(request: Request):
+    form = await request.form()
+    floors = [form.get(f"floor_{i}") for i in range(allocations.N - 1)]
+    emins = [form.get(f"emin_{i}") for i in range(allocations.N)]
+    emaxs = [form.get(f"emax_{i}") for i in range(allocations.N)]
+    try:
+        with db.session() as conn:
+            new_id = allocations.create_version(conn, floors, emins, emaxs, str(form.get("note") or ""))
+    except allocations.AllocationError as e:
+        with db.session() as conn:
+            ctx = _settings_ctx(conn)
+        ctx["a_error"] = str(e)
+        return templates.TemplateResponse(request, "settings.html", ctx, status_code=400)
+    return RedirectResponse(f"/settings?a_saved={new_id}#allocation", status_code=303)
 
 
 @app.get("/manifest.webmanifest")

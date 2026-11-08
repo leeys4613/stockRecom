@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import calendar_kr
 import config
 import db
+import allocations
 import performance
 import weights as weights_mod
 from analyzer import llm
@@ -51,7 +52,8 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
             news_rows = news.latest(conn)
 
         with db.session() as conn:
-            wset = weights_mod.get_active(conn)  # 이번 분석에 쓸 가중치 버전 (분석 도중 바뀌어도 일관되게)
+            wset = weights_mod.get_active(conn)  # 이번 분석에 쓸 가중치/비중 규칙 버전 (분석 도중 바뀌어도 일관되게)
+            aset = allocations.get_active(conn)
         changes = {r["key"]: (r["change_pct"] if r["freshness"] == "fresh" else None)
                    for r in macro_rows}
         scored = engine.compute_score(changes, wset["weights"], wset["saturation"])
@@ -72,15 +74,15 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
         with db.session() as conn:
             cur = conn.execute(
                 "INSERT INTO analyses (created_at,llm_status,provider,base_score,adjustment,"
-                "final_score,coverage,missing,summary,risk_comment,error,inputs,weight_set_id) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "final_score,coverage,missing,summary,risk_comment,error,inputs,weight_set_id,"
+                "allocation_set_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (datetime.now(timezone.utc).isoformat(timespec="seconds"),
                  result["status"], result["provider"], base, adj, final, scored["coverage"],
                  json.dumps(scored["missing"]),
                  json.dumps(a.summary_3lines, ensure_ascii=False) if a else None,
                  a.risk_comment if a else None, result["error"],
                  json.dumps(build_context(macro_rows, news_rows, scored), ensure_ascii=False),
-                 wset["id"]))
+                 wset["id"], aset["id"]))
             analysis_id = cur.lastrowid
         _fill_outcomes_best_effort(closes_fetcher)
         return analysis_id
@@ -106,7 +108,12 @@ def latest_analysis(conn):
     d["summary"] = json.loads(d["summary"]) if d["summary"] else []
     ws = weights_mod.get(conn, d.get("weight_set_id")) if d.get("weight_set_id") else None
     d["weight_label"] = ws["label"] if ws else None
-    d["allocation"] = engine.allocation(d["final_score"]) if d["final_score"] is not None else None
+    # 비중은 그 분석 당시의 규칙 버전으로 계산한다 (규칙을 나중에 바꿔도 과거 기록은 그대로)
+    aset = (allocations.get(conn, d.get("allocation_set_id")) if d.get("allocation_set_id")
+            else None) or allocations.get_active(conn)
+    d["allocation_label"] = aset["label"]
+    d["allocation"] = (engine.allocation(d["final_score"], aset["bands"])
+                       if d["final_score"] is not None else None)
     s = d["final_score"]
     d["signal"] = (None if s is None else
                    "green" if s >= config.SIGNAL_GREEN else
