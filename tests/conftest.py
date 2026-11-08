@@ -1,6 +1,7 @@
 import pytest
 
 import config
+import performance
 
 
 @pytest.fixture(autouse=True)
@@ -9,6 +10,10 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
     monkeypatch.setattr(config, "SCHEDULER_ENABLED", False)
     monkeypatch.setattr(config, "LLM_PROVIDER", "none-in-tests")
+
+    def no_network():
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(performance, "kospi_closes", no_network)
 
 
 RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>

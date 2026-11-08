@@ -49,6 +49,16 @@ CREATE TABLE IF NOT EXISTS analyses (
     error TEXT,
     inputs TEXT          -- JSON: LLM에 준 입력 스냅샷 (사후 검증용)
 );
+
+-- 예측 사후 결과: 기준 종가(분석 시점에 알려진 마지막 KOSPI 종가) 대비 1/5 거래일 후 수익률
+CREATE TABLE IF NOT EXISTS outcomes (
+    analysis_id INTEGER PRIMARY KEY REFERENCES analyses(id),
+    ref_date TEXT NOT NULL,
+    ref_close REAL NOT NULL,
+    d1_date TEXT, d1_close REAL, d1_ret REAL,
+    d5_date TEXT, d5_close REAL, d5_ret REAL,
+    updated_at TEXT NOT NULL
+);
 """
 
 

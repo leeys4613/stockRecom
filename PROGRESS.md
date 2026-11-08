@@ -31,13 +31,14 @@
   - ⚠ 가중치/임계값 초기안은 기록하되 **사람 확인 필요**
 - [x] **3. 뉴스 + LLM + 스케줄러**: `news.py`, `analyzer/llm.py`, APScheduler(거래일 캘린더)
   - LLM 공급자 교체 구조: 기본 `claude_cli`(Pro 구독, 키 불필요), 선택 `anthropic_api`(키 필요, 실키 미검증)
-- [ ] **4. 예측 기록 + PWA**: 예측 저장, 사후 수익률 채우기, 적중률/Brier, manifest/sw, tailscale serve
+- [ ] **4. 예측 기록 + PWA**: 코드 완료(사후 수익률/적중률/Brier, 성과 페이지, manifest/sw/아이콘, 서버 launchd plist). **배포는 사람 작업 대기** → `docs/DEPLOY.md` (서버 launchd 등록, Tailscale, 폰 설치)
 - [ ] **5. 레포트 크롤링**: `reports.py`, Top5 후보군
 - [ ] **6. KIS 연동**: ⚠ 사람 확인 필요 (앱 키, 모의투자, 제공 항목 사전 조사)
 
 ## 다음 할 일
-1. 단계 4: 예측 기록 + PWA (analyses 테이블은 이미 입력 스냅샷을 저장함 → 사후 수익률 채우기, 적중률/Brier 화면, manifest/sw, tailscale serve)
-2. 서버 상시 실행(launchd) 설정은 단계 4에서 사람과 함께 (현재는 수동 실행: `.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000`)
+1. (사람) `docs/DEPLOY.md` 순서대로 서버 launchd 등록 → Tailscale 설치/HTTPS → 폰 PWA 설치 → 체크리스트 확인. 완료되면 단계 4 체크.
+2. 단계 5: 레포트 크롤링 (`reports.py`, Top5 후보군). 시작 전 대상 사이트 약관/구조 확인 필요
+3. 몇 주 쌓인 뒤 `/performance`로 점수의 정보량 판단 (기준일 30일 미만이면 판단 금지)
 
 ## 사람 확인 필요 (무인 실행 시 여기서 멈춤)
 - 점수 가중치 초기안 (`config.py` SCORE_WEIGHTS): SOX +0.30, USDKRW -0.25, US10Y -0.15, USDCNH -0.10, WTI -0.10, USDJPY +0.05, BTC +0.05 (절대값 합 1.0)
@@ -45,6 +46,9 @@
 - USD/CNH 대신 CNY=X 사용해도 되는지
 
 ## 결정 사항 로그
+- 2026-11-08: 사후 검증 기준 종가 = 분석 시점에 알려진 마지막 KOSPI 종가(16:00 이후 분석은 당일 종가). 당일 데이터가 아직 없으면 잘못된 기준을 잡지 않고 대기. Brier는 "점수/100을 확률로 가정"한 진단용이며 기준 모델(평균 상승률)과 함께 표시
+- 2026-11-08: 표본 판단 기준 = 서로 다른 기준일 30일 이상 (하루 4회 분석은 서로 상관이 높음)
+- 2026-11-08: PWA 서비스워커는 네트워크 우선 + 오프라인 시 마지막 화면. 서버는 127.0.0.1 바인딩, 외부 접근은 tailscale serve만 (funnel/포트포워딩 금지)
 - 2026-11-08: LLM은 `claude -p`(Pro 구독) 기본, API는 `LLM_PROVIDER=anthropic_api`로 전환. 호출은 `--tools ""`, `--json-schema`, 프로젝트 컨텍스트 차단(cwd=tmp)
 - 2026-11-08: stale/failed 지표는 점수에서 결측 처리 (오래된 값으로 점수 산출 금지)
 - 2026-11-08: LLM 실패 시 보정 0 + 규칙 점수만 표시, 사유 저장. 보정은 스키마+코드에서 ±10 제한. 뉴스 헤드라인은 비신뢰 데이터로 프롬프트에 명시

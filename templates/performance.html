@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="mut">예측(점수)을 KOSPI 실제 수익률과 비교합니다. 기준: 분석 시점에 알려진 마지막 종가 대비 1/5거래일 후 종가.
+  하루 4번 분석하므로 같은 날의 예측은 서로 비슷합니다. "기준일 수"를 표본 크기로 보세요.</p>
+
+{% for h in [(s1, '1거래일 후'), (s5, '5거래일 후')] %}
+{% set s = h[0] %}
+<h2>{{ h[1] }}</h2>
+<div class="card" id="perf-{{ s.horizon }}">
+  {% if s.n == 0 %}
+    <div class="mut">아직 결과가 채워진 예측이 없습니다. 분석 후 {{ '1' if s.horizon == 'd1' else '5' }}거래일이 지나면 표시됩니다.</div>
+  {% else %}
+    {% if not s.enough %}<div class="warn">표본 부족: 기준일 {{ s.n_days }}일 (30일 이상부터 의미를 볼 수 있습니다). 지금 수치로 판단하지 마세요.</div>{% endif %}
+    <table>
+      <tr><td>예측 수 / 기준일 수</td><td>{{ s.n }} / {{ s.n_days }}</td></tr>
+      <tr><td>방향 적중률 (점수 ≥50 = 상승 예측)</td><td>{{ "{:.0f}".format(s.hit_rate * 100) }}%</td></tr>
+      <tr><td>비교: 실제 상승 비율 (항상 "상승"이라 답할 때의 적중률)</td><td>{{ "{:.0f}".format(s.base_up_rate * 100) }}%</td></tr>
+      <tr><td>Brier (점수/100을 확률로 가정, 낮을수록 좋음)</td><td>{{ "{:.3f}".format(s.brier) }}</td></tr>
+      <tr><td>비교: 기준 모델 Brier (평균 상승률만 말할 때)</td><td>{{ "{:.3f}".format(s.brier_baseline) }}</td></tr>
+    </table>
+    <div class="mut">적중률이 "항상 상승" 비율보다, Brier가 기준 모델보다 뚜렷하게 낮아야 점수에 정보가 있다는 뜻입니다.</div>
+    <table style="margin-top:10px">
+      <thead><tr><th>점수 구간</th><th>예측 수</th><th>평균 수익률</th><th>상승 비율</th></tr></thead>
+      {% for key, label in [('green','60 이상'),('yellow','40~59'),('red','39 이하')] %}
+      {% set b = s.bands[key] %}
+      <tr><td>{{ label }}</td><td>{{ b.n }}</td>
+        <td>{% if b.avg_ret is not none %}{{ "{:+.2f}".format(b.avg_ret) }}%{% else %}-{% endif %}</td>
+        <td>{% if b.up_rate is not none %}{{ "{:.0f}".format(b.up_rate * 100) }}%{% else %}-{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+</div>
+{% endfor %}
+
+<h2>최근 예측</h2>
+<table id="recent">
+  <thead><tr><th>시각</th><th>점수</th><th>1일 후</th><th>5일 후</th></tr></thead>
+  {% for r in recent %}
+  <tr><td>{{ r.created_at | kst }}</td><td>{{ "{:.0f}".format(r.final_score) }}</td>
+    <td class="{% if r.d1_ret is not none %}{{ 'up' if r.d1_ret >= 0 else 'down' }}{% endif %}">
+      {% if r.d1_ret is not none %}{{ "{:+.2f}".format(r.d1_ret) }}%{% else %}대기{% endif %}</td>
+    <td class="{% if r.d5_ret is not none %}{{ 'up' if r.d5_ret >= 0 else 'down' }}{% endif %}">
+      {% if r.d5_ret is not none %}{{ "{:+.2f}".format(r.d5_ret) }}%{% else %}대기{% endif %}</td></tr>
+  {% else %}
+  <tr><td colspan="4" class="mut">예측 기록이 없습니다.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

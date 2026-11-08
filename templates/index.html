@@ -1,35 +1,5 @@
-<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>K-MacroSight</title>
-<style>
-  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --mut:#666; --bd:#ddd; --card:#f6f7f9; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --fg:#e8e8e8; --mut:#999; --bd:#2c3138; --card:#1a1e24; } }
-  body { background:var(--bg); color:var(--fg); font-family:-apple-system,sans-serif; max-width:760px; margin:0 auto; padding:16px; }
-  h2 { font-size:16px; margin:24px 0 8px; }
-  table { width:100%; border-collapse:collapse; }
-  th, td { padding:8px 6px; border-bottom:1px solid var(--bd); text-align:right; }
-  th:first-child, td:first-child { text-align:left; }
-  .up { color:#d33; } .down { color:#36c; }
-  .badge { font-size:12px; padding:2px 8px; border-radius:10px; color:#fff; }
-  .fresh { background:#2a9d4a; } .stale { background:#d9a000; } .failed { background:#d33; } .none { background:#888; }
-  .err { color:var(--mut); font-size:12px; text-align:left; }
-  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:14px 16px; margin:12px 0; }
-  .score { font-size:44px; font-weight:700; line-height:1; }
-  .sig-green .score { color:#2a9d4a; } .sig-yellow .score { color:#d9a000; } .sig-red .score { color:#d33; }
-  .mut { color:var(--mut); font-size:12px; }
-  .warn { color:#d9a000; font-size:13px; }
-  ul.lines { margin:6px 0; padding-left:18px; }
-  ul.news { margin:4px 0 12px; padding-left:18px; font-size:14px; }
-  ul.news a { color:inherit; }
-  button { padding:8px 14px; }
-  footer { color:var(--mut); font-size:12px; margin-top:24px; }
-</style>
-</head>
-<body>
-<h1>K-MacroSight</h1>
+{% extends "base.html" %}
+{% block content %}
 <form method="post" action="/refresh"><button type="submit">지금 갱신</button>
   <span class="mut">수집·분석은 백그라운드로 진행됩니다. 잠시 후 새로고침하세요.</span></form>
 
@@ -106,7 +76,4 @@
   </ul>
 {% endfor %}
 </section>
-
-<footer>개인용 참고 도구이며 투자자문이 아닙니다. 점수는 확률이 아니며 검증 전입니다.</footer>
-</body>
-</html>
+{% endblock %}

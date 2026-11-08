@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import calendar_kr
 import config
 import db
+import performance
 from analyzer import llm
 from collectors import macro, news
 from scoring import engine
@@ -35,7 +36,7 @@ def build_context(macro_rows, news_rows, scored):
     }
 
 
-def run_once(provider=None, macro_fetcher=None, news_fetcher=None):
+def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetcher=None):
     """한 번의 종합 분석. 이미 실행 중이면 None. 성공 시 저장된 analyses.id."""
     if not _lock.acquire(blocking=False):
         return None
@@ -76,9 +77,20 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None):
                  json.dumps(a.summary_3lines, ensure_ascii=False) if a else None,
                  a.risk_comment if a else None, result["error"],
                  json.dumps(build_context(macro_rows, news_rows, scored), ensure_ascii=False)))
-            return cur.lastrowid
+            analysis_id = cur.lastrowid
+        _fill_outcomes_best_effort(closes_fetcher)
+        return analysis_id
     finally:
         _lock.release()
+
+
+def _fill_outcomes_best_effort(closes_fetcher):
+    """과거 예측의 사후 수익률 채우기. 실패해도 이번 분석 결과에는 영향 없다."""
+    try:
+        with db.session() as conn:
+            performance.fill_outcomes(conn, closes_fetcher)
+    except Exception:
+        pass
 
 
 def latest_analysis(conn):
