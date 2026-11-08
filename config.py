@@ -33,8 +33,10 @@ MACRO_INDICATORS = {
     "AIDD": ("AI 대형주 60일 고점 대비", None),
     # 메모리 가격 기대의 시장 프록시: 메모리주(Micron·SK하이닉스·Nanya·Winbond·SanDisk·Kioxia·메모리 ETF) 평균
     "MEM10D": ("메모리주 10거래일 변화", None),
+    # 데이터센터 건설 속도의 간접 지표: 전력·전기 인프라주(변압기·전력기기·발전·송배전). 가중치 0 = 점수에는 반영하지 않는 참고 지표
+    "POWER10D": ("전력 인프라 10거래일 변화 (참고)", None),
 }
-DERIVED_UNITS = {"KOSPI10D": "%", "KOSPIDD": "%", "VIXAVG": "", "AI1D": "%", "AI10D": "%", "AIDD": "%", "MEM10D": "%"}
+DERIVED_UNITS = {"KOSPI10D": "%", "KOSPIDD": "%", "VIXAVG": "", "AI1D": "%", "AI10D": "%", "AIDD": "%", "MEM10D": "%", "POWER10D": "%"}
 SCORE_CENTER = {"VIXAVG": 20.0}      # 점수 입력 = 값 - 중립값 (VIX 10일 평균이 20 이면 0점)
 KOSPI_SYMBOL = "^KS11"
 TREND_DAYS = 10   # 추세 지표의 관측 기간(거래일): KOSPI 변화·고점 대비·VIX 평균
@@ -63,6 +65,7 @@ SCORE_WEIGHTS = {
     "AI10D": 0.08,       # AI 대형주 바스켓 10거래일 평균 변화
     "AIDD": 0.09,        # AI 대형주 바스켓 60일 고점 대비 평균 낙폭
     "MEM10D": 0.07,      # 메모리주 10거래일 평균 변화 (메모리 가격 기대 프록시)
+    "POWER10D": 0.0,     # 전력 인프라(참고용). 가중치 0 이면 점수에 반영하지 않는다 — 리밸런싱 때 설정 화면에서 올린다
 }
 # 지표 방향(고정): +1 = 지표가 오르면 점수↑, -1 = 오르면 점수↓. 사용자 조정은 크기만 허용한다
 SCORE_DIRECTION = {k: (1 if w >= 0 else -1) for k, w in SCORE_WEIGHTS.items()}
@@ -85,6 +88,7 @@ SCORE_SATURATION_PCT = {
     "AI10D": 8.0,      # 10거래일 ±8%
     "AIDD": 30.0,      # 60일 고점 대비 -30%
     "MEM10D": 12.0,    # 메모리주는 변동이 커서 10거래일 ±12% 에서 포화
+    "POWER10D": 10.0,  # 전력 인프라 10거래일 ±10% (참고용이라 가중치를 올릴 때만 의미)
 }
 # 점수 구간 -> 주식 비중 범위(%). (하한점수, 라벨, 주식 최소, 주식 최대) 내림차순 검사
 # 라벨은 화면에서 "매수 가능성 <라벨>"로 표시된다 (확률이 아니라 점수 구간)
@@ -111,16 +115,19 @@ NEWS_TOPICS = {
     "ai_capex": ("AI 설비투자·데이터센터 (영문)", '"AI bubble" OR "data center" OR datacenter OR "AI capex" OR hyperscaler OR "AI spending"'),
     "ai_stocks": ("AI 인프라 종목 (영문)", "CoreWeave OR IREN OR Micron OR TSMC OR Nvidia OR \"SK hynix\" AI stock"),
     # 메모리 가격(DRAM·HBM·NAND) 방향: 헤드라인에 가격·매출 수치가 실린다. 가격 상승=긍정, 하락·공급과잉=부정
+    # 데이터센터 건설 속도의 제약(전력·변압기·계통 연결·지역 규제) — 'AI 시장 반응' 판정의 근거로 쓴다
+    "ai_power_en": ("데이터센터 전력·그리드 (영문)", '"data center" power grid OR electricity demand OR transformer shortage OR "interconnection queue" OR utility AI'),
+    "ai_power_kr": ("데이터센터 전력·전력기기 (한국어)", "변압기 OR 전력기기 OR 데이터센터 전력 OR 송전 OR 전력망"),
     "mem_kr": ("메모리 가격 (한국어)", "D램 가격 OR 고정거래가격 OR HBM 가격 OR 낸드 가격 OR 메모리 가격"),
     "mem_en": ("메모리 가격 (영문)", "DRAM prices OR \"DRAM contract price\" OR HBM prices OR NAND prices OR TrendForce memory"),
 }
 NEWS_LOCALE = {"ai_capex": "hl=en-US&gl=US&ceid=US:en", "ai_stocks": "hl=en-US&gl=US&ceid=US:en",
-               "mem_en": "hl=en-US&gl=US&ceid=US:en"}
+               "ai_power_en": "hl=en-US&gl=US&ceid=US:en", "mem_en": "hl=en-US&gl=US&ceid=US:en"}
 # 구글 뉴스 RSS 는 최신순이 아니라 관련도순이라 오래된 기사가 섞인다 → 기간 제한(검색어 + 발행일 필터)
 NEWS_DEFAULT_MAX_AGE_DAYS = 3
-NEWS_MAX_AGE_DAYS = {"us_policy": 3, "kr_policy": 7, "ai_capex": 3, "ai_stocks": 3, "mem_kr": 5, "mem_en": 5}
-NEWS_PER_TOPIC_OVERRIDE = {"us_policy": 8, "kr_policy": 8, "ai_capex": 8, "ai_stocks": 8, "mem_kr": 8, "mem_en": 8}
-POLICY_TOPICS = {"us": ["us_policy"], "kr": ["kr_policy"], "ai": ["ai_capex", "ai_stocks"], "mem": ["mem_kr", "mem_en"]}
+NEWS_MAX_AGE_DAYS = {"us_policy": 3, "kr_policy": 7, "ai_capex": 3, "ai_stocks": 3, "ai_power_en": 3, "ai_power_kr": 3, "mem_kr": 5, "mem_en": 5}
+NEWS_PER_TOPIC_OVERRIDE = {"us_policy": 8, "kr_policy": 8, "ai_capex": 8, "ai_stocks": 8, "ai_power_en": 6, "ai_power_kr": 6, "mem_kr": 8, "mem_en": 8}
+POLICY_TOPICS = {"us": ["us_policy"], "kr": ["kr_policy"], "ai": ["ai_capex", "ai_stocks", "ai_power_en", "ai_power_kr"], "mem": ["mem_kr", "mem_en"]}
 POLICY_LEVEL_MAX = 3                      # AI 판정 단계: -3(매우 부정) ~ +3(매우 긍정)
 POLICY_CAPS_DEFAULT = {"us": 10.0, "kr": 6.0, "ai": 6.0, "mem": 6.0}  # 정책 반영 점수 상한(±점). 단계/3 * 상한
 NEWS_PER_TOPIC = 5
@@ -169,13 +176,21 @@ AI_TICKERS = {
     # 메모리 가격에 민감한 프록시(바스켓에는 넣지 않고 메모리 지표/트래커에만 사용)
     "2408.TW": ("Nanya(DRAM)", "memory"), "2344.TW": ("Winbond", "memory"),
     "SNDK": ("SanDisk(NAND)", "memory"), "285A.T": ("Kioxia(NAND)", "memory"), "DRAM": ("메모리 ETF", "memory"),
+    # 데이터센터 건설 속도의 간접 지표(전력·전기 인프라): 미국(전력·냉각·발전·송배전) + 한국 전력기기(변압기 등)
+    "VRT": ("Vertiv", "power"), "ETN": ("Eaton", "power"), "GEV": ("GE Vernova", "power"),
+    "CEG": ("Constellation", "power"), "VST": ("Vistra", "power"), "PWR": ("Quanta", "power"),
+    "267260.KS": ("HD현대일렉트릭", "power"), "010120.KS": ("LS ELECTRIC", "power"), "298040.KS": ("효성중공업", "power"),
+    "034020.KS": ("두산에너빌리티", "power"), "103590.KS": ("일진전기", "power"),
 }
 AI_BASKET_GROUPS = ("bigtech", "semis", "datacenter")
 MEMORY_PROXY = ["MU", "000660.KS", "2408.TW", "2344.TW", "SNDK", "285A.T", "DRAM"]
-AI_GROUP_NAMES = {"bigtech": "빅테크(수요)", "semis": "반도체(공급망)", "datacenter": "데이터센터(인프라)", "memory": "메모리 프록시"}
+AI_GROUP_NAMES = {"bigtech": "빅테크(수요)", "semis": "반도체(공급망)", "datacenter": "데이터센터(인프라)", "memory": "메모리 프록시", "power": "전력·전기 인프라"}
 AI_DD_WINDOW = 60                  # 고점 대비 낙폭 관측 기간(거래일)
 AI_MIN_TICKERS = 6                 # 바스켓 지표는 최소 이 종목 수가 성공해야 계산 (메모리 프록시는 MEM_MIN_TICKERS)
 MEM_MIN_TICKERS = 4
+POWER_MIN_TICKERS = 6
 CAPEX_TICKERS = ["MSFT", "AMZN", "GOOGL", "META"]
 CAPEX_REFRESH_HOURS = 20
+CAPEX_QOQ_STRONG = 5.0              # 분기 대비 이 이상 늘면 '확대 지속', 0~이 값이면 '증가율 둔화', 음수면 '감소'
+CAPEX_QOQ_DECEL_PP = 3.0           # 직전 QoQ 보다 이만큼(%p) 낮아지면 '증가율 둔화' 추가 표시
 CAPEX_ANOMALY_QOQ = 1.8            # 직전 분기 대비 이 배수 이상이면 데이터 이상 의심 표시

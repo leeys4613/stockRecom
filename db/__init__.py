@@ -179,7 +179,8 @@ def _migrate(conn):
     # 새 버전을 추가한다 (사용자가 조정한 비중을 덮어쓰지 않고, 과거 분석/성과 비교는 이전 버전으로 남는다).
     latest = conn.execute("SELECT * FROM weight_sets ORDER BY id DESC LIMIT 1").fetchone()
     lw, lsat = json.loads(latest["weights"]), json.loads(latest["saturation"])
-    missing_keys = [k for k in config.SCORE_WEIGHTS if k not in lw]
+    # 가중치 0 인 새 지표(참고용)는 새 버전을 만들지 않는다: 점수가 같아서 성과 표본을 쪼갤 이유가 없고, 없는 키는 점수에서 무시된다
+    missing_keys = [k for k in config.SCORE_WEIGHTS if k not in lw and config.SCORE_WEIGHTS[k] != 0]
     if missing_keys:
         new_share = sum(abs(config.SCORE_WEIGHTS[k]) for k in missing_keys)
         merged = {k: round(w * (1 - new_share), 6) for k, w in lw.items() if k in config.SCORE_WEIGHTS}

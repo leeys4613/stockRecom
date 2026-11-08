@@ -82,6 +82,12 @@ def derive_ai(ai_snaps):
     else:
         out.append(_derived_row("MEM10D", None, fetched_at,
                                 f"메모리 프록시 {len(mem)}/{len(config.MEMORY_PROXY)}개만 수집 (최소 {config.MEM_MIN_TICKERS}개 필요)"))
+    power = [ok[t] for t, (_, g) in config.AI_TICKERS.items() if g == "power" and t in ok]
+    if len(power) >= config.POWER_MIN_TICKERS:
+        out.append(_derived_row("POWER10D", sum(r["chg10d"] for r in power) / len(power), fetched_at))
+    else:
+        out.append(_derived_row("POWER10D", None, fetched_at,
+                                f"전력 인프라 {len(power)}개만 수집 (최소 {config.POWER_MIN_TICKERS}개 필요)"))
     return out
 
 

@@ -139,11 +139,24 @@ def capex_summary(conn):
         per.append(dict(ticker=t, name=config.AI_TICKERS.get(t, (t,))[0], latest=d, capex=v,
                         yoy=(v / yoy_base[1] - 1) * 100 if yoy_base else None,
                         qoq=(v / prev[1] - 1) * 100 if prev else None, flags=flags))
-    clean = [p for p in per if p.get("latest") and not p["flags"] and p["yoy"] is not None]
+    # 합계는 이상치가 없는 종목만. 분기 대비(QoQ)가 기본 지표이고 전년 대비(YoY)는 보조다
+    clean_q = [p for p in per if p.get("latest") and not p["flags"] and p["qoq"] is not None]
+    clean_y = [p for p in per if p.get("latest") and not p["flags"] and p["yoy"] is not None]
     total = None
-    if clean:
-        cur = sum(p["capex"] for p in clean)
-        base = sum(p["capex"] / (1 + p["yoy"] / 100) for p in clean)
-        total = dict(n=len(clean), capex=cur, yoy=(cur / base - 1) * 100,
-                     period=max(p["latest"] for p in clean))
+    if clean_q:
+        cur = sum(p["capex"] for p in clean_q)
+        prev = sum(p["capex"] / (1 + p["qoq"] / 100) for p in clean_q)
+        total = dict(n=len(clean_q), capex=cur, qoq=(cur / prev - 1) * 100, period=max(p["latest"] for p in clean_q),
+                     yoy=None, yoy_n=len(clean_y), qoq_history=[])
+        if clean_y:
+            c2 = sum(p["capex"] for p in clean_y)
+            b2 = sum(p["capex"] / (1 + p["yoy"] / 100) for p in clean_y)
+            total["yoy"] = (c2 / b2 - 1) * 100
+        # 최근 분기별 합계의 QoQ 흐름(가속/둔화): 모든 대상 종목에 데이터가 있는 분기만 사용
+        by_t = {p["ticker"]: dict(conn.execute("SELECT period_end,capex FROM capex_quarters WHERE ticker=? ORDER BY period_end",
+                                               (p["ticker"],)).fetchall()) for p in clean_q}
+        common = sorted(set.intersection(*[set(d) for d in by_t.values()]))[-4:]
+        sums = [sum(d[q] for d in by_t.values()) for q in common]
+        total["qoq_history"] = [dict(period=common[i], qoq=(sums[i] / sums[i - 1] - 1) * 100)
+                                for i in range(1, len(common)) if sums[i - 1]]
     return dict(per=per, total=total)

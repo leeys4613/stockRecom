@@ -25,6 +25,8 @@ def compute_score(changes, weights=None, saturation=None):
     used, missing, contributions = 0.0, [], {}
     acc = 0.0
     for key, w in weights.items():
+        if w == 0:   # 가중치 0 = 점수에 반영하지 않는 참고 지표: 결측으로도 세지 않는다
+            continue
         ch = changes.get(key)
         if ch is None:
             missing.append(key)

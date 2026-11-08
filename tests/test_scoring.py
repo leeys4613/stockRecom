@@ -33,7 +33,8 @@ def test_missing_reported_and_renormalized():
     changes["SOX"] = 3.0
     r = compute_score(changes)
     assert r["score"] == 100  # 유효 지표 1개로 재정규화
-    assert "SOX" not in r["missing"] and len(r["missing"]) == len(config.SCORE_WEIGHTS) - 1
+    nonzero = [k for k, v in config.SCORE_WEIGHTS.items() if v != 0]   # 가중치 0 인 참고 지표는 결측으로 세지 않는다
+    assert "SOX" not in r["missing"] and len(r["missing"]) == len(nonzero) - 1
     assert r["coverage"] == pytest.approx(abs(config.SCORE_WEIGHTS["SOX"]))
 
 

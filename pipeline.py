@@ -65,15 +65,37 @@ def tracker_view(conn):
     capex = ai_tracker.capex_summary(conn)
     basket = [r for r in rows if r["grp"] in config.AI_BASKET_GROUPS and r["price"] is not None and not r["stale"]]
     reading = None
-    if basket and capex["total"]:
+    cx = capex["total"]
+    if basket and cx:
         dd = sum(r["dd60"] for r in basket) / len(basket)
-        if capex["total"]["yoy"] > 10 and dd < -15:
-            reading = "빅테크 설비투자는 늘고 있지만 AI 대형주는 고점 대비 크게 빠져 있습니다. 시장이 투자의 지속성·수익성을 의심하는 상태로 읽힙니다."
-        elif capex["total"]["yoy"] > 10 and dd > -8:
-            reading = "빅테크 설비투자 증가와 AI 대형주 주가가 함께 유지되고 있습니다. 투자 사이클에 대한 시장 신뢰가 유지되는 상태입니다."
-        elif capex["total"]["yoy"] <= 10:
-            reading = "빅테크 설비투자 증가세가 둔화됐습니다. 데이터센터 건설 속도 둔화 신호인지 확인이 필요합니다."
-    return dict(rows=rows, groups=groups, capex=capex, reading=reading)
+        q = cx["qoq"]
+        hist = cx["qoq_history"]
+        decel = len(hist) >= 2 and hist[-1]["qoq"] < hist[-2]["qoq"] - config.CAPEX_QOQ_DECEL_PP
+        tail = f" 최근 분기 대비 증가율은 직전({hist[-2]['qoq']:+.0f}%)보다 낮아졌습니다." if decel else ""
+        if q >= config.CAPEX_QOQ_STRONG and dd < -15:
+            reading = (f"빅테크 설비투자는 직전 분기보다 {q:+.0f}% 늘고 있지만 AI 대형주는 고점 대비 크게 빠져 있습니다. "
+                       f"시장이 투자의 지속성·수익성을 의심하는 상태로 읽힙니다.{tail}")
+        elif q >= config.CAPEX_QOQ_STRONG:
+            reading = f"빅테크 설비투자가 직전 분기보다 {q:+.0f}% 늘고 AI 대형주 주가도 유지되고 있습니다. 투자 사이클에 대한 시장 신뢰가 유지되는 상태입니다.{tail}"
+        elif q >= 0:
+            reading = f"빅테크 설비투자 증가가 직전 분기 대비 {q:+.0f}%로 둔화됐습니다. 데이터센터 건설 속도 둔화 신호인지 확인이 필요합니다.{tail}"
+        else:
+            reading = f"빅테크 설비투자가 직전 분기보다 {q:+.0f}% 줄었습니다. 건설 속도 둔화의 직접 신호라 가장 주의해서 볼 대목입니다."
+    # 건설 속도 신호: 전력·전기 인프라(수요 측 병목). 한국 전력기기주는 코스피 급락 영향이 섞이므로 미국 전력주로 판정한다
+    pw_us = [r for r in rows if r["grp"] == "power" and not r["ticker"].endswith(".KS") and r["price"] is not None and not r["stale"]]
+    pw_kr = [r for r in rows if r["grp"] == "power" and r["ticker"].endswith(".KS") and r["price"] is not None and not r["stale"]]
+    build_reading = None
+    if len(pw_us) >= 3:
+        d = sum(r["dd60"] for r in pw_us) / len(pw_us)
+        kr = f", 한국 전력기기주 평균 {sum(r['dd60'] for r in pw_kr) / len(pw_kr):+.0f}%(코스피 급락 영향 포함)" if pw_kr else ""
+        head = f"미국 전력·전기 인프라주는 60일 고점 대비 평균 {d:+.0f}%{kr}. "
+        if d > -10:
+            build_reading = head + "비교적 견조해 건설 수요 자체는 유지되는 신호이며, AI 종목 약세는 사업자 수익성·자금 조달 우려에 가깝습니다."
+        elif d > -25:
+            build_reading = head + "상당히 조정받고 있어, 건설 속도 우려가 인프라 전반으로 번지는 중간 단계로 읽힙니다."
+        else:
+            build_reading = head + "크게 약세여서, 데이터센터 건설 속도 둔화 우려가 공급망 전반에 반영된 상태로 읽힙니다."
+    return dict(rows=rows, groups=groups, capex=capex, reading=reading, build_reading=build_reading)
 
 
 def tracker_context(view):
@@ -86,10 +108,14 @@ def tracker_context(view):
                          chg10d=r1(r["chg10d"]), dd60=r1(r["dd60"]), stale=r["stale"]) for r in view["rows"]],
         "bigtech_capex_total": None if not view["capex"]["total"] else dict(
             quarter=view["capex"]["total"]["period"], usd_bn=round(view["capex"]["total"]["capex"] / 1e9, 1),
-            yoy_pct=r1(view["capex"]["total"]["yoy"]), n=view["capex"]["total"]["n"]),
-        "bigtech_capex": [dict(t=p["ticker"], quarter=p.get("latest"), yoy_pct=r1(p.get("yoy")), flags=p.get("flags", []))
-                          for p in view["capex"]["per"]],
+            qoq_pct=r1(view["capex"]["total"]["qoq"]), yoy_pct=r1(view["capex"]["total"]["yoy"]),
+            qoq_history=[dict(quarter=h["period"], qoq_pct=r1(h["qoq"])) for h in view["capex"]["total"]["qoq_history"]],
+            n=view["capex"]["total"]["n"]),
+        "bigtech_capex": [dict(t=p["ticker"], quarter=p.get("latest"), qoq_pct=r1(p.get("qoq")), yoy_pct=r1(p.get("yoy")),
+                               flags=p.get("flags", [])) for p in view["capex"]["per"]],
+        "capex_note": "분기 대비(QoQ)가 기본 지표(투자 속도 변화), 전년 대비(YoY)는 보조",
         "reading": view["reading"],
+        "construction_reading": view["build_reading"],
     }
 
 
@@ -108,6 +134,8 @@ def algorithm_info(wset, aset, scored):
         "indicator_weights": {k: round(v, 3) for k, v in wset["weights"].items()},
         "indicator_notes": {
             "kind=change": "value 는 현재값, change_pct 는 전일 변동률(점수 입력)",
+            "weight 0": "가중치가 0이거나 indicator_weights 에 없는 지표(예: POWER10D 전력 인프라)는 점수에 반영되지 않는 참고 지표다. "
+                        "데이터센터 건설 속도의 간접 신호(전력·변압기 병목, 지역 규제)로 해석에 활용하라",
             "kind=feature": "value 자체가 추세·수준 지표(점수 입력): KOSPI10D=KOSPI 최근 10거래일 변화율(%), "
                             "KOSPIDD=최근 10거래일 고점 대비 낙폭(%), VIXAVG=VIX 10일 평균(20이 중립, 높을수록 위험 국면). "
                             "하루 반등에 점수가 과대평가되지 않도록 넣은 지표다",
