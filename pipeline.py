@@ -43,6 +43,22 @@ def build_context(macro_rows, news_rows, scored):
     }
 
 
+def algorithm_info(wset, aset, scored):
+    """AI 가 현재 알고리즘 구조에 맞춰 해석할 수 있도록 점수 공식·구간표·정책 상한·규칙 점수 구간을 알려준다."""
+    rule = None
+    if scored["score"] is not None:
+        a = engine.allocation(scored["score"], aset["bands"])
+        rule = dict(score=scored["score"], band=f"매수 가능성 {a['label']}",
+                    equity=f"{a['equity_min']}~{a['equity_max']}%")
+    return {
+        "formula": "최종 점수 = 규칙 점수(지표 가중 합산) + 정책 반영(미국/한국, 단계/3×상한) + 일반 보정. 구간별 권장 주식 비중이 정해진다.",
+        "rule_score_band": rule,
+        "policy_caps_pts": wset.get("policy") or {},
+        "bands": [dict(score_from=b[0], band=f"매수 가능성 {b[1]}", equity=f"{b[2]}~{b[3]}%") for b in aset["bands"]],
+        "indicator_weights": {k: round(v, 3) for k, v in wset["weights"].items()},
+    }
+
+
 def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetcher=None):
     """한 번의 종합 분석. 이미 실행 중이면 None. 성공 시 저장된 analyses.id."""
     if not _lock.acquire(blocking=False):
@@ -63,6 +79,8 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
                    for r in macro_rows}
         scored = engine.compute_score(changes, wset["weights"], wset["saturation"])
 
+        ctx = build_context(macro_rows, news_rows, scored)
+        ctx["algorithm"] = algorithm_info(wset, aset, scored)
         if scored["score"] is None:
             result = dict(status="skipped", provider=None, analysis=None,
                           error="유효한 지표가 없어 분석 생략")
@@ -70,7 +88,6 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
             adj = 0
             pol = None
         else:
-            ctx = build_context(macro_rows, news_rows, scored)
             result = llm.analyze(ctx, provider)
             base = scored["score"]
             caps = wset.get("policy") or {}   # 구 버전(정책 상한 없음)은 정책 반영 0
@@ -92,7 +109,7 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
                  json.dumps(scored["missing"]),
                  json.dumps(a.summary_3lines, ensure_ascii=False) if a else None,
                  a.risk_comment if a else None, result["error"],
-                 json.dumps(build_context(macro_rows, news_rows, scored), ensure_ascii=False),
+                 json.dumps(ctx, ensure_ascii=False),
                  wset["id"], aset["id"],
                  pol["us"]["points"] if pol else None, pol["kr"]["points"] if pol else None,
                  json.dumps(pol, ensure_ascii=False) if pol else None))

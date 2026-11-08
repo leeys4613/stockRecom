@@ -222,3 +222,30 @@ def test_settings_has_policy_caps_and_validates():
         assert r.status_code == 200 and "정책 반영 상한: 미국 ±4 · 한국 ±3" in r.text
         r = c.post("/settings", data=data)                         # 정책 입력 누락
         assert r.status_code == 400
+
+
+# ---------- AI 요약: 판단 중심 + 알고리즘 구조 전달 ----------
+def test_prompt_asks_for_judgment_not_number_listing():
+    p = llm.SYSTEM_PROMPT
+    for needle in ("[국면]", "[핵심 동인]", "[리스크·운용]", "판단", "반복하지 말고", "algorithm",
+                   "단정하지 말고", "입력에 없는 사실", "개별 종목의 매수/매도는 말하지 않는다"):
+        assert needle in p, needle
+
+
+def test_llm_input_includes_algorithm_structure():
+    seen = {}
+
+    class Spy(FakeProvider):
+        def complete(self, prompt):
+            seen["prompt"] = prompt
+            return super().complete(prompt)
+    run(Spy(policy_payload(us_policy_effect=0, us_policy_evidence=[], kr_policy_effect=0, kr_policy_evidence=[])))
+    ctx = json.loads(seen["prompt"].split("<input>")[1].split("</input>")[0])
+    alg = ctx["algorithm"]
+    assert "최종 점수 = 규칙 점수" in alg["formula"]
+    assert len(alg["bands"]) == 5 and alg["bands"][0]["band"].startswith("매수 가능성")
+    assert alg["policy_caps_pts"] == {"us": 10.0, "kr": 6.0}
+    assert alg["rule_score_band"]["band"].startswith("매수 가능성") and "%" in alg["rule_score_band"]["equity"]
+    assert abs(sum(abs(w) for w in alg["indicator_weights"].values()) - 1.0) < 0.02
+    with db.session() as conn:     # 저장되는 inputs 스냅샷에도 같은 구조가 남는다 (사후 검증용)
+        assert "algorithm" in json.loads(conn.execute("SELECT inputs FROM analyses").fetchone()[0])
