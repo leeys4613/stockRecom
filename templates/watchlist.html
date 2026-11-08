@@ -15,7 +15,7 @@
   #suggest li[aria-selected="true"], #suggest li:hover { background:var(--bd); }
 </style>
 <form method="post" action="/watchlist/add" id="add-form" autocomplete="off" style="position:relative">
-  <input type="text" id="q" name="q" placeholder="종목명 또는 코드 (삼성전자 · 005930 · ㅅㅅㅈㅈ)" maxlength="30" required
+  <input type="text" id="q" name="q" placeholder="종목명·코드·초성 검색" maxlength="30" required
          role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list"
          style="width:70%;max-width:360px;padding:10px;font-size:16px">
   <input type="hidden" name="code" id="f-code"><input type="hidden" name="market" id="f-market"><input type="hidden" name="name" id="f-name">
@@ -87,32 +87,38 @@
   <span class="mut">{% if picks_at %}마지막 수집 {{ picks_at | kst }}{% else %}아직 수집 기록이 없습니다{% endif %} · 백그라운드 실행, 잠시 후 새로고침</span>
 </form>
 
-<table id="watch">
-  <thead><tr><th>종목</th><th>현재가</th><th>목표가(평균)</th><th>의견</th><th>애널</th><th>목표가 추이</th><th></th></tr></thead>
+<div id="watch">
   {% for e in items %}
   {% set s = e.snap %}
-  <tr data-code="{{ e.code }}">
-    <td>{{ e.name }}<br><span class="mut">{{ e.code }}.{{ e.market }}</span></td>
-    <td>{% if s and s.price %}{{ "{:,.0f}".format(s.price) }}{% else %}-{% endif %}</td>
-    <td>{% if s and s.target_mean %}{{ "{:,.0f}".format(s.target_mean) }}<br>
-      <span class="{{ 'up' if e.upside is not none and e.upside >= 0 else 'down' }}">{% if e.upside is not none %}{{ "{:+.0f}".format(e.upside * 100) }}%{% endif %}</span>{% else %}-{% endif %}</td>
-    <td>{% if s and s.rec_mean %}{{ "{:.1f}".format(s.rec_mean) }}<br><span class="mut">{{ e.opinion }}</span>{% else %}-{% endif %}</td>
-    <td>{% if s and s.n_analysts %}{{ s.n_analysts }}명{% else %}-{% endif %}</td>
-    <td>{% if e.trend is not none %}<span class="{{ 'up' if e.trend >= 0 else 'down' }}">{{ "{:+.1f}".format(e.trend * 100) }}%</span><br><span class="mut">{{ "{:.0f}".format(e.trend_days) }}일간</span>{% else %}<span class="mut">축적 중</span>{% endif %}</td>
-    <td style="white-space:nowrap">
-      <form method="post" action="/watchlist/remove" style="display:inline"><input type="hidden" name="code" value="{{ e.code }}"><button type="submit" title="삭제" aria-label="{{ e.name }} 삭제">✕</button></form>
-    </td>
-  </tr>
-  <tr><td colspan="7" class="err">
-    {% for f in e.flags %}<span class="badge {{ 'failed' if f in ('failed','no_data') else 'stale' }}">{{ flag_text[f] }}</span> {% endfor %}
-    {% if e.last and e.last.status == 'failed' %}<span class="mut">{{ e.last.fetched_at | kst }} {{ e.last.error }}</span>{% endif %}
-    {% if e.eligible %}<span class="badge fresh">Top Picks 후보</span> {% endif %}
-    <a href="https://finance.naver.com/item/main.naver?code={{ e.code }}" target="_blank" rel="noopener noreferrer" style="color:inherit">네이버 증권 ↗</a> ·
-    <a href="https://consensus.hankyung.com/" target="_blank" rel="noopener noreferrer" style="color:inherit">한경컨센서스 ↗</a>
-  </td></tr>
+  <div class="card stock" data-code="{{ e.code }}">
+    <div class="stock-head">
+      <div><b style="font-size:17px">{{ e.name }}</b> <span class="mut">{{ e.code }}.{{ e.market }}</span></div>
+      <form method="post" action="/watchlist/remove" style="margin:0"><input type="hidden" name="code" value="{{ e.code }}"><button type="submit" title="삭제" aria-label="{{ e.name }} 삭제">✕</button></form>
+    </div>
+    <div class="metrics">
+      <div class="m"><span class="k">현재가</span><span class="v">{% if s and s.price %}{{ "{:,.0f}".format(s.price) }}{% else %}-{% endif %}</span></div>
+      <div class="m"><span class="k">목표가 (평균)</span>
+        <span class="v">{% if s and s.target_mean %}{{ "{:,.0f}".format(s.target_mean) }}{% else %}-{% endif %}</span>
+        {% if e.upside is not none %}<span class="sub {{ 'up' if e.upside >= 0 else 'down' }}">괴리 {{ "{:+.0f}".format(e.upside * 100) }}%</span>{% endif %}</div>
+      <div class="m"><span class="k">의견 평균</span>
+        <span class="v">{% if s and s.rec_mean %}{{ "{:.1f}".format(s.rec_mean) }}{% else %}-{% endif %}</span>
+        {% if e.opinion %}<span class="sub">{{ e.opinion }}</span>{% endif %}</div>
+      <div class="m"><span class="k">애널리스트</span><span class="v">{% if s and s.n_analysts %}{{ s.n_analysts }}명{% else %}-{% endif %}</span></div>
+      <div class="m"><span class="k">목표가 추이</span>
+        {% if e.trend is not none %}<span class="v {{ 'up' if e.trend >= 0 else 'down' }}">{{ "{:+.1f}".format(e.trend * 100) }}%</span><span class="sub">{{ "{:.0f}".format(e.trend_days) }}일간</span>
+        {% else %}<span class="v mut">축적 중</span>{% endif %}</div>
+    </div>
+    <div class="flags">
+      {% for f in e.flags %}<span class="badge {{ 'failed' if f in ('failed','no_data') else 'stale' }}">{{ flag_text[f] }}</span>{% endfor %}
+      {% if e.eligible %}<span class="badge fresh">Top Picks 후보</span>{% endif %}
+      {% if e.last and e.last.status == 'failed' %}<span class="mut">{{ e.last.fetched_at | kst }} {{ e.last.error }}</span>{% endif %}
+      <a href="https://finance.naver.com/item/main.naver?code={{ e.code }}" target="_blank" rel="noopener noreferrer" style="color:inherit">네이버 증권 ↗</a>
+      <a href="https://consensus.hankyung.com/" target="_blank" rel="noopener noreferrer" style="color:inherit">한경컨센서스 ↗</a>
+    </div>
+  </div>
   {% else %}
-  <tr><td colspan="7" class="mut">관심종목이 없습니다. 위에서 종목코드를 추가하세요.</td></tr>
+  <div class="card mut">관심종목이 없습니다. 위에서 종목을 검색해 추가하세요.</div>
   {% endfor %}
-</table>
+</div>
 <p class="mut">Top Picks 후보 조건: 최신 데이터(3일 이내) · 애널리스트 {{ min_analysts }}명 이상 · 목표가 괴리 +100% 이하(초과 시 데이터 이상 의심) · 목표가 평균 &gt; 현재가.</p>
 {% endblock %}

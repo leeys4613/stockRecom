@@ -11,15 +11,14 @@
 
 <form method="post" action="/settings">
   <table id="weights">
-    <thead><tr><th>지표</th><th>방향</th><th>현재 비중</th><th>중요도 (0~100)</th><th>포화 변동률 (%)</th></tr></thead>
+    <thead><tr><th>지표</th><th>현재 비중</th><th>중요도<br><span class="mut">0~100</span></th><th>포화<br><span class="mut">변동률 %</span></th></tr></thead>
     <tbody>
     {% for r in rows %}
     <tr data-key="{{ r.key }}">
-      <td>{{ r.name }}</td>
-      <td>{{ '오르면 점수 ↑' if r.direction > 0 else '오르면 점수 ↓' }}</td>
+      <td>{{ r.name }}<br><span class="mut">{{ '오르면 점수 ↑' if r.direction > 0 else '오르면 점수 ↓' }}</span></td>
       <td>{{ "{:.1f}".format(r.share) }}%</td>
-      <td><input type="number" name="imp_{{ r.key }}" value="{{ '%.1f' % r.share }}" min="0" max="100" step="0.1" required style="width:70px"></td>
-      <td><input type="number" name="sat_{{ r.key }}" value="{{ r.sat }}" min="{{ sat_min }}" max="{{ sat_max }}" step="0.1" required style="width:70px"></td>
+      <td><input type="number" name="imp_{{ r.key }}" value="{{ '%.1f' % r.share }}" min="0" max="100" step="0.1" required style="width:60px" aria-label="{{ r.name }} 중요도"></td>
+      <td><input type="number" name="sat_{{ r.key }}" value="{{ r.sat }}" min="{{ sat_min }}" max="{{ sat_max }}" step="0.1" required style="width:60px" aria-label="{{ r.name }} 포화 변동률"></td>
     </tr>
     {% endfor %}
     </tbody>
@@ -53,9 +52,9 @@
     {% for b in bands %}
     <tr data-band="{{ loop.index0 }}">
       <td>매수 가능성 {{ b[1] }}</td>
-      <td>{% if not loop.last %}<input type="number" name="floor_{{ loop.index0 }}" value="{{ b[0] }}" min="1" max="100" step="1" required style="width:64px">{% else %}0 (고정){% endif %}</td>
-      <td><input type="number" name="emin_{{ loop.index0 }}" value="{{ b[2] }}" min="0" max="{{ cap }}" step="1" required style="width:64px"></td>
-      <td><input type="number" name="emax_{{ loop.index0 }}" value="{{ b[3] }}" min="0" max="{{ cap }}" step="1" required style="width:64px"></td>
+      <td>{% if not loop.last %}<input type="number" name="floor_{{ loop.index0 }}" value="{{ b[0] }}" min="1" max="100" step="1" required style="width:56px" aria-label="{{ b[1] }} 점수 하한">{% else %}0 (고정){% endif %}</td>
+      <td><input type="number" name="emin_{{ loop.index0 }}" value="{{ b[2] }}" min="0" max="{{ cap }}" step="1" required style="width:56px" aria-label="{{ b[1] }} 주식 최소"></td>
+      <td><input type="number" name="emax_{{ loop.index0 }}" value="{{ b[3] }}" min="0" max="{{ cap }}" step="1" required style="width:56px" aria-label="{{ b[1] }} 주식 최대"></td>
     </tr>
     {% endfor %}
     </tbody>

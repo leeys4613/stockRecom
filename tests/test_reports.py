@@ -283,3 +283,14 @@ def test_watchlist_page_shows_flags_and_failure_reason():
         r = c.get("/watchlist")
     assert "괴리 과대" in r.text and "최근 조회 실패" in r.text and "TimeoutError: slow" in r.text
     assert 'badge fresh">Top Picks 후보</span>' not in r.text  # 후보 배지(설명문과 구분)
+
+
+def test_watchlist_cards_keep_up_down_colors_and_no_table():
+    with client() as c:
+        with db.session() as conn:
+            add(conn)
+            snap(conn, "005930", target_mean=130.0)
+        html = c.get("/watchlist").text
+    assert 'class="card stock"' in html and "<table id=\"watch\"" not in html     # 폰 폭에서 깨지지 않게 카드형
+    assert 'class="sub up"' in html and ".m .up { color:#d33; }" in html          # 괴리율 색이 우선순위에 가려지지 않음
+    assert "word-break: keep-all" in html                                           # 한글은 단어 단위로만 줄바꿈
