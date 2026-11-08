@@ -34,6 +34,8 @@ SCORE_WEIGHTS = {
     "BTC": 0.05,
     "WTI": -0.10,
 }
+# 지표 방향(고정): +1 = 지표 상승이 국장에 우호적, -1 = 비우호적. 사용자 조정은 크기만 허용한다
+SCORE_DIRECTION = {k: (1 if w >= 0 else -1) for k, w in SCORE_WEIGHTS.items()}
 # 일간 변동률(%)이 이 값이면 지표 점수가 ±1(포화)이 된다
 SCORE_SATURATION_PCT = {
     "SOX": 3.0,

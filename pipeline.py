@@ -10,6 +10,7 @@ import calendar_kr
 import config
 import db
 import performance
+import weights as weights_mod
 from analyzer import llm
 from collectors import macro, news
 from scoring import engine
@@ -49,9 +50,11 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
             macro_rows = macro.latest(conn)
             news_rows = news.latest(conn)
 
+        with db.session() as conn:
+            wset = weights_mod.get_active(conn)  # 이번 분석에 쓸 가중치 버전 (분석 도중 바뀌어도 일관되게)
         changes = {r["key"]: (r["change_pct"] if r["freshness"] == "fresh" else None)
                    for r in macro_rows}
-        scored = engine.compute_score(changes)
+        scored = engine.compute_score(changes, wset["weights"], wset["saturation"])
 
         if scored["score"] is None:
             result = dict(status="skipped", provider=None, analysis=None,
@@ -69,14 +72,15 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
         with db.session() as conn:
             cur = conn.execute(
                 "INSERT INTO analyses (created_at,llm_status,provider,base_score,adjustment,"
-                "final_score,coverage,missing,summary,risk_comment,error,inputs) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "final_score,coverage,missing,summary,risk_comment,error,inputs,weight_set_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (datetime.now(timezone.utc).isoformat(timespec="seconds"),
                  result["status"], result["provider"], base, adj, final, scored["coverage"],
                  json.dumps(scored["missing"]),
                  json.dumps(a.summary_3lines, ensure_ascii=False) if a else None,
                  a.risk_comment if a else None, result["error"],
-                 json.dumps(build_context(macro_rows, news_rows, scored), ensure_ascii=False)))
+                 json.dumps(build_context(macro_rows, news_rows, scored), ensure_ascii=False),
+                 wset["id"]))
             analysis_id = cur.lastrowid
         _fill_outcomes_best_effort(closes_fetcher)
         return analysis_id
@@ -100,6 +104,8 @@ def latest_analysis(conn):
     d = dict(row)
     d["missing"] = json.loads(d["missing"]) if d["missing"] else []
     d["summary"] = json.loads(d["summary"]) if d["summary"] else []
+    ws = weights_mod.get(conn, d.get("weight_set_id")) if d.get("weight_set_id") else None
+    d["weight_label"] = ws["label"] if ws else None
     d["allocation"] = engine.allocation(d["final_score"]) if d["final_score"] is not None else None
     s = d["final_score"]
     d["signal"] = (None if s is None else

@@ -3,9 +3,24 @@
 <p class="mut">예측(점수)을 KOSPI 실제 수익률과 비교합니다. 기준: 분석 시점에 알려진 마지막 종가 대비 1/5거래일 후 종가.
   하루 4번 분석하므로 같은 날의 예측은 서로 비슷합니다. "기준일 수"를 표본 크기로 보세요.</p>
 
+<h2>가중치 버전</h2>
+<p class="mut" id="version-filter">보기:
+  <a href="/performance" style="color:inherit;{{ 'font-weight:700;' if selected is none }}">전체</a>
+  {% for w in versions %} · <a href="/performance?v={{ w.id }}" style="color:inherit;{{ 'font-weight:700;' if selected == w.id }}">{{ w.label }}</a>{% endfor %}
+</p>
+<table id="versions">
+  <thead><tr><th>버전</th><th>기준일 수(1일후)</th><th>적중률</th><th>Brier</th></tr></thead>
+  {% for w in versions %}
+  <tr><td>{{ w.label }}</td><td>{{ w.d1.n_days }}</td>
+    <td>{% if w.d1.hit_rate is not none %}{{ "{:.0f}".format(w.d1.hit_rate * 100) }}%{% else %}-{% endif %}</td>
+    <td>{% if w.d1.brier is not none %}{{ "{:.3f}".format(w.d1.brier) }}{% else %}-{% endif %}</td></tr>
+  {% endfor %}
+</table>
+<div class="mut">버전마다 기준일이 30일 이상 쌓인 뒤에 비교하세요. 표본이 적은 버전끼리의 차이는 우연일 가능성이 큽니다.</div>
+
 {% for h in [(s1, '1거래일 후'), (s5, '5거래일 후')] %}
 {% set s = h[0] %}
-<h2>{{ h[1] }}</h2>
+<h2>{{ h[1] }}{% if selected is not none %} · 버전 id {{ selected }}만{% endif %}</h2>
 <div class="card" id="perf-{{ s.horizon }}">
   {% if s.n == 0 %}
     <div class="mut">아직 결과가 채워진 예측이 없습니다. 분석 후 {{ '1' if s.horizon == 'd1' else '5' }}거래일이 지나면 표시됩니다.</div>

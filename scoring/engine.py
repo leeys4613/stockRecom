@@ -6,14 +6,14 @@ def _clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
 
 
-def indicator_score(key, change_pct):
+def indicator_score(key, change_pct, saturation=None):
     """변동률(%) -> -1..+1 (부호는 국장 우호도 방향 반영, 포화 임계값에서 ±1)."""
-    sat = config.SCORE_SATURATION_PCT[key]
-    sign = 1 if config.SCORE_WEIGHTS[key] >= 0 else -1
+    sat = (saturation or config.SCORE_SATURATION_PCT)[key]
+    sign = config.SCORE_DIRECTION[key]
     return sign * _clamp(change_pct / sat)
 
 
-def compute_score(changes, weights=None):
+def compute_score(changes, weights=None, saturation=None):
     """changes: {key: 변동률% 또는 None}. 결측 지표는 제외하고 가중치를 재정규화한다.
 
     반환: dict(score, missing, contributions, coverage)
@@ -29,7 +29,7 @@ def compute_score(changes, weights=None):
         if ch is None:
             missing.append(key)
             continue
-        s = indicator_score(key, ch)
+        s = indicator_score(key, ch, saturation)
         used += abs(w)
         acc += abs(w) * s
         contributions[key] = abs(w) * s

@@ -13,6 +13,7 @@ import config
 import db
 import performance
 import pipeline
+import weights as weights_mod
 from collectors import macro, news
 
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
@@ -80,11 +81,51 @@ def refresh(background: BackgroundTasks):
 
 
 @app.get("/performance")
-def performance_page(request: Request):
+def performance_page(request: Request, v: int | None = None):
     with db.session() as conn:
-        ctx = dict(active="perf", s1=performance.summarize(conn, "d1"),
-                   s5=performance.summarize(conn, "d5"), recent=performance.recent(conn))
+        versions = []
+        for w in weights_mod.list_all(conn):
+            s1 = performance.summarize(conn, "d1", w["id"])
+            versions.append(dict(w, d1=s1, d5=performance.summarize(conn, "d5", w["id"])))
+        ctx = dict(active="perf", selected=v, versions=versions,
+                   s1=performance.summarize(conn, "d1", v), s5=performance.summarize(conn, "d5", v),
+                   recent=performance.recent(conn))
     return templates.TemplateResponse(request, "performance.html", ctx)
+
+
+def _settings_ctx(conn, **extra):
+    active = weights_mod.get_active(conn)
+    rows = [dict(key=k, name=name, direction=config.SCORE_DIRECTION[k],
+                 share=abs(active["weights"][k]) * 100, sat=active["saturation"][k])
+            for k, (name, _) in config.MACRO_INDICATORS.items()]
+    return dict(active="settings", rows=rows, current=active, history=weights_mod.list_all(conn),
+                indicators=config.MACRO_INDICATORS, sat_min=weights_mod.SAT_MIN,
+                sat_max=weights_mod.SAT_MAX, error=None, saved=None, **extra)
+
+
+@app.get("/settings")
+def settings_page(request: Request, saved: int | None = None):
+    with db.session() as conn:
+        ctx = _settings_ctx(conn)
+    ctx["saved"] = saved
+    return templates.TemplateResponse(request, "settings.html", ctx)
+
+
+@app.post("/settings")
+async def settings_save(request: Request):
+    form = await request.form()
+    importance = {k: form.get(f"imp_{k}") for k in config.MACRO_INDICATORS}
+    saturation = {k: form.get(f"sat_{k}") for k in config.MACRO_INDICATORS}
+    note = str(form.get("note") or "")
+    try:
+        with db.session() as conn:
+            new_id = weights_mod.create_version(conn, importance, saturation, note)
+    except weights_mod.WeightError as e:
+        with db.session() as conn:
+            ctx = _settings_ctx(conn)
+        ctx["error"] = str(e)
+        return templates.TemplateResponse(request, "settings.html", ctx, status_code=400)
+    return RedirectResponse(f"/settings?saved={new_id}", status_code=303)
 
 
 @app.get("/manifest.webmanifest")

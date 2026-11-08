@@ -42,7 +42,7 @@
 <h1>K-MacroSight</h1>
 {% set generated = now_kst() %}
 <div id="offline-banner" role="alert" data-generated="{{ generated }}"></div>
-<nav><a href="/" class="{{ 'on' if active == 'dash' }}">대시보드</a><a href="/performance" class="{{ 'on' if active == 'perf' }}">성과 검증</a></nav>
+<nav><a href="/" class="{{ 'on' if active == 'dash' }}">대시보드</a><a href="/performance" class="{{ 'on' if active == 'perf' }}">성과 검증</a><a href="/settings" class="{{ 'on' if active == 'settings' }}">가중치</a></nav>
 {% block content %}{% endblock %}
 <footer>개인용 참고 도구이며 투자자문이 아닙니다. 점수는 확률이 아니며 검증 전입니다.
   <br>화면 생성 {{ generated }} (오프라인이면 마지막으로 본 화면이 보일 수 있습니다)</footer>

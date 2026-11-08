@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>점수 가중치 설정</h2>
+<p class="mut">지표별 중요도와 포화 변동률을 조정합니다. 저장하면 <b>새 버전</b>이 만들어져 <b>다음 분석부터</b> 적용되며, 과거 기록은 바뀌지 않습니다.
+  방향(↑우호/↓비우호)은 고정이고, 중요도는 합계가 100%가 되도록 자동 정규화됩니다.
+  포화 변동률은 "하루 변동이 이 값이면 그 지표 점수가 최대(±1)"가 되는 기준입니다.</p>
+<p class="warn">최근 성과에 맞춰 가중치를 자주 바꾸면 과적합이 됩니다. 버전마다 기준일 30일 이상 쌓은 뒤에 <a href="/performance" style="color:inherit">성과 검증</a>에서 비교하세요.</p>
+
+{% if saved %}<div class="card" id="saved">저장되었습니다 (버전 id {{ saved }}). 다음 분석부터 적용됩니다. 지금 적용하려면 대시보드에서 "지금 갱신"을 누르세요.</div>{% endif %}
+{% if error %}<div class="card warn" id="error">저장 실패: {{ error }}</div>{% endif %}
+
+<form method="post" action="/settings">
+  <table id="weights">
+    <thead><tr><th>지표</th><th>방향</th><th>현재 비중</th><th>중요도 (0~100)</th><th>포화 변동률 (%)</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr data-key="{{ r.key }}">
+      <td>{{ r.name }}</td>
+      <td>{{ '↑ 우호' if r.direction > 0 else '↓ 비우호' }}</td>
+      <td>{{ "{:.1f}".format(r.share) }}%</td>
+      <td><input type="number" name="imp_{{ r.key }}" value="{{ '%.1f' % r.share }}" min="0" max="100" step="0.1" required style="width:70px"></td>
+      <td><input type="number" name="sat_{{ r.key }}" value="{{ r.sat }}" min="{{ sat_min }}" max="{{ sat_max }}" step="0.1" required style="width:70px"></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p><input type="text" name="note" maxlength="40" placeholder="메모 (예: 환율 비중 상향 실험)" style="width:100%;box-sizing:border-box;padding:8px"></p>
+  <button type="submit">새 버전으로 저장</button>
+  <span class="mut">현재 적용 중: {{ current.label }}</span>
+</form>
+
+<h2>버전 기록</h2>
+<table id="history">
+  <thead><tr><th>버전</th><th>생성</th><th>비중 (%)</th></tr></thead>
+  {% for h in history %}
+  <tr><td>{{ h.label }}</td><td>{{ h.created_at | kst }}</td>
+    <td style="text-align:left" class="mut">{% for k, w in h.weights.items() %}{{ indicators[k][0] }} {{ "{:+.0f}".format(w * 100) }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

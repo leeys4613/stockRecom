@@ -34,6 +34,15 @@ CREATE TABLE IF NOT EXISTS news_items (
     published TEXT
 );
 
+-- 점수 가중치 세트: 불변 버전. 저장하면 새 행이 생기고 가장 큰 id 가 현재 적용 버전이다.
+CREATE TABLE IF NOT EXISTS weight_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    label TEXT NOT NULL,
+    weights TEXT NOT NULL,      -- JSON {key: 부호 있는 정규화 가중치, 절대값 합 1}
+    saturation TEXT NOT NULL    -- JSON {key: 포화 변동률(%)}
+);
+
 CREATE TABLE IF NOT EXISTS analyses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL,
@@ -47,7 +56,8 @@ CREATE TABLE IF NOT EXISTS analyses (
     summary TEXT,        -- JSON list (3 lines)
     risk_comment TEXT,
     error TEXT,
-    inputs TEXT          -- JSON: LLM에 준 입력 스냅샷 (사후 검증용)
+    inputs TEXT,         -- JSON: LLM에 준 입력 스냅샷 (사후 검증용)
+    weight_set_id INTEGER REFERENCES weight_sets(id)
 );
 
 -- 예측 사후 결과: 기준 종가(분석 시점에 알려진 마지막 KOSPI 종가) 대비 1/5 거래일 후 수익률
@@ -68,10 +78,28 @@ def connect(path=None):
     return conn
 
 
+def _migrate(conn):
+    """기존 DB 보강: analyses.weight_set_id 컬럼 추가, v1(초기안) 시드, 기존 분석은 v1 로 표시."""
+    import json
+    from datetime import datetime, timezone
+
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(analyses)")]
+    if "weight_set_id" not in cols:
+        conn.execute("ALTER TABLE analyses ADD COLUMN weight_set_id INTEGER REFERENCES weight_sets(id)")
+    if conn.execute("SELECT COUNT(*) FROM weight_sets").fetchone()[0] == 0:
+        conn.execute(
+            "INSERT INTO weight_sets (created_at,label,weights,saturation) VALUES (?,?,?,?)",
+            (datetime.now(timezone.utc).isoformat(timespec="seconds"), "v1 초기안",
+             json.dumps(config.SCORE_WEIGHTS), json.dumps(config.SCORE_SATURATION_PCT)))
+        # 이 시점까지 쌓인 분석은 모두 초기안으로 계산된 것이다
+        conn.execute("UPDATE analyses SET weight_set_id=1 WHERE weight_set_id IS NULL")
+
+
 def init_db(path=None):
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()

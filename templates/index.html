@@ -13,7 +13,8 @@
       <div class="score">{{ "{:.0f}".format(analysis.final_score) }}<span class="mut"> / 100</span></div>
       <div class="mut">규칙 점수 {{ "{:.1f}".format(analysis.base_score) }}
         {% if analysis.llm_status == 'ok' %}· AI 보정 {{ "{:+d}".format(analysis.adjustment) }}{% endif %}
-        · 지표 반영률 {{ "{:.0f}".format(analysis.coverage * 100) }}%</div>
+        · 지표 반영률 {{ "{:.0f}".format(analysis.coverage * 100) }}%
+        {% if analysis.weight_label %}· 가중치 {{ analysis.weight_label }}{% endif %}</div>
       {% if analysis.allocation %}
       <div style="margin-top:8px">{{ analysis.allocation.label }} 구간 · 권장 주식 비중
         <b>{{ analysis.allocation.equity_min }}~{{ analysis.allocation.equity_max }}%</b>,

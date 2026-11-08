@@ -91,13 +91,17 @@ def _band(score):
             "yellow" if score >= config.SIGNAL_YELLOW else "red")
 
 
-def summarize(conn, horizon="d1"):
-    """horizon: 'd1' | 'd5'. 결과가 채워진 예측만 집계한다."""
+def summarize(conn, horizon="d1", weight_set_id=None):
+    """horizon: 'd1' | 'd5'. 결과가 채워진 예측만 집계한다. weight_set_id 로 가중치 버전별 집계."""
     col = f"{horizon}_ret"
-    rows = conn.execute(
-        f"SELECT a.final_score AS score, o.ref_date AS ref_date, o.{col} AS ret "
-        f"FROM analyses a JOIN outcomes o ON o.analysis_id=a.id "
-        f"WHERE a.final_score IS NOT NULL AND o.{col} IS NOT NULL").fetchall()
+    sql = (f"SELECT a.final_score AS score, o.ref_date AS ref_date, o.{col} AS ret "
+           f"FROM analyses a JOIN outcomes o ON o.analysis_id=a.id "
+           f"WHERE a.final_score IS NOT NULL AND o.{col} IS NOT NULL")
+    args = ()
+    if weight_set_id is not None:
+        sql += " AND a.weight_set_id=?"
+        args = (weight_set_id,)
+    rows = conn.execute(sql, args).fetchall()
     n = len(rows)
     res = dict(horizon=horizon, n=n, n_days=len({r["ref_date"] for r in rows}),
                hit_rate=None, base_up_rate=None, brier=None, brier_baseline=None, bands={})
