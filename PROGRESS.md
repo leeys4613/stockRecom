@@ -31,14 +31,17 @@
   - ⚠ 가중치/임계값 초기안은 기록하되 **사람 확인 필요**
 - [x] **3. 뉴스 + LLM + 스케줄러**: `news.py`, `analyzer/llm.py`, APScheduler(거래일 캘린더)
   - LLM 공급자 교체 구조: 기본 `claude_cli`(Pro 구독, 키 불필요), 선택 `anthropic_api`(키 필요, 실키 미검증)
-- [ ] **4. 예측 기록 + PWA**: 코드 완료(사후 수익률/적중률/Brier, 성과 페이지, manifest/sw/아이콘, 서버 launchd plist). **배포는 사람 작업 대기** → `docs/DEPLOY.md` (서버 launchd 등록, Tailscale, 폰 설치)
+- [x] **4. 예측 기록 + PWA**: 사후 수익률/적중률/Brier, 성과 페이지, manifest/sw/아이콘, 서버 launchd, Tailscale serve(tailnet only), 폰(Z Flip6) PWA 설치 확인
+  - 접속 URL: https://macbookpro-2.taila5103b.ts.net/ (tailnet 전용)
+  - 미확인: Tailscale 끈 폰에서 접속 차단 여부(사람 확인), 거래일 자동 스케줄 실행(다음 거래일 07:30 이후 analyses 행 확인)
 - [ ] **5. 레포트 크롤링**: `reports.py`, Top5 후보군
 - [ ] **6. KIS 연동**: ⚠ 사람 확인 필요 (앱 키, 모의투자, 제공 항목 사전 조사)
 
 ## 다음 할 일
-1. (사람) `docs/DEPLOY.md` 순서대로 서버 launchd 등록 → Tailscale 설치/HTTPS → 폰 PWA 설치 → 체크리스트 확인. 완료되면 단계 4 체크.
+1. (사람) 폰에서 Tailscale 끈 채로 접속 차단되는지 확인. 다음 거래일 07:30 이후 자동 분석 행 생성 확인
 2. 단계 5: 레포트 크롤링 (`reports.py`, Top5 후보군). 시작 전 대상 사이트 약관/구조 확인 필요
 3. 몇 주 쌓인 뒤 `/performance`로 점수의 정보량 판단 (기준일 30일 미만이면 판단 금지)
+4. 가중치/구간/CNY 대체 확정 (아래 "사람 확인 필요")
 
 ## 사람 확인 필요 (무인 실행 시 여기서 멈춤)
 - 점수 가중치 초기안 (`config.py` SCORE_WEIGHTS): SOX +0.30, USDKRW -0.25, US10Y -0.15, USDCNH -0.10, WTI -0.10, USDJPY +0.05, BTC +0.05 (절대값 합 1.0)
