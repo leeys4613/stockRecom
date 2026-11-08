@@ -64,6 +64,13 @@ def yf_fetch(sym):
     return out
 
 
+def yf_industry(sym):
+    """Yahoo 업종명(영문). 없으면 None. 섹터 매핑이 없는 종목의 소속 테마를 추정할 때만 쓴다."""
+    import yfinance as yf
+
+    return (yf.Ticker(sym).get_info() or {}).get("industry")
+
+
 FIELDS = ("price", "target_mean", "target_high", "target_low", "target_median", "rec_mean", "rec_key",
           "n_analysts", "strong_buy", "buy", "hold", "sell", "strong_sell")
 

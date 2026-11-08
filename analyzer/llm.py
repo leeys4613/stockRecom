@@ -79,13 +79,13 @@ def build_prompt(ctx):
 class ClaudeCliProvider:
     name = "claude_cli"
 
-    def complete(self, prompt):
+    def complete(self, prompt, system=None, schema=None):
         proc = subprocess.run(
             [config.CLAUDE_BIN, "-p", prompt,
              "--tools", "", "--no-session-persistence", "--disable-slash-commands",
              "--output-format", "json",
-             "--json-schema", json.dumps(Analysis.model_json_schema()),
-             "--system-prompt", SYSTEM_PROMPT],
+             "--json-schema", json.dumps(schema or Analysis.model_json_schema()),
+             "--system-prompt", system or SYSTEM_PROMPT],
             capture_output=True, text=True, timeout=config.LLM_TIMEOUT_SEC,
             cwd=tempfile.gettempdir())  # 프로젝트 컨텍스트(CLAUDE.md 등) 차단
         try:
@@ -104,12 +104,12 @@ class AnthropicApiProvider:
     """⚠ 실제 키로 검증되지 않음. LLM_PROVIDER=anthropic_api 로 전환할 때 사용."""
     name = "anthropic_api"
 
-    def complete(self, prompt):
+    def complete(self, prompt, system=None, schema=None):
         import anthropic
 
         client = anthropic.Anthropic()  # ANTHROPIC_API_KEY 환경변수
         msg = client.messages.create(
-            model=config.ANTHROPIC_MODEL, max_tokens=1024, system=SYSTEM_PROMPT,
+            model=config.ANTHROPIC_MODEL, max_tokens=4096, system=system or SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt + "\nJSON 객체만 출력해라."}])
         text = "".join(b.text for b in msg.content if b.type == "text").strip()
         start, end = text.find("{"), text.rfind("}")

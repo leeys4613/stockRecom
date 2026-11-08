@@ -219,18 +219,26 @@ def test_dashboard_empty_states():
         with db.session() as conn:
             add(conn)
             snap(conn, "005930", n_analysts=2)  # 후보 조건 미충족
-        assert "조건을 충족하는 후보가 없습니다" in c.get("/").text
+        assert "아직 AI 판정 결과가 없습니다" in c.get("/").text
 
 
-def test_dashboard_shows_top_picks_card():
+def test_dashboard_shows_ai_fit_ranking_card_not_consensus_ranking():
+    import stockviews
     with client() as c:
         with db.session() as conn:
             add(conn, "005930", name="삼성전자")
-            snap(conn, "005930", days_ago=0)
-            conn.execute("UPDATE consensus_snapshots SET fetched_at=?", (datetime.now(timezone.utc).isoformat(timespec="seconds"),))
+            add(conn, "000660", name="SK하이닉스")
+            snap(conn, "005930", target_mean=130.0)
+            for code, crowd, sector, score, comment in (("005930", 33.3, 66.7, 50.0, "삼성 코멘트"), ("000660", 83.3, 83.3, 83.3, "하이닉스 코멘트")):
+                stockviews.save(conn, [stockviews.make_row(code, None, dict(
+                    crowd_effect=1, crowd_score=crowd, crowd_evidence=[], crowd_note=None, sector_effect=1, sector_score=sector,
+                    sector_note="n", score=score, comment=comment), ["semis"], {})])
         html = c.get("/").text
-    assert 'id="picks"' in html and "삼성전자" in html and "+30%" in html and "컨센서스 점수" in html
-    assert "축적 중" in html and "매수 추천이 아닙니다" in html
+    assert 'id="picks"' in html and "관심종목 AI 적합도 순위" in html
+    assert html.index("SK하이닉스") < html.index("삼성전자", html.index('id="picks"'))        # 추천 점수 순위
+    assert "추천 점수" in html and "대중심리 83" in html and "주도섹터 적합도 83" in html and "하이닉스 코멘트" in html
+    assert "매수 추천이 아닙니다" in html
+    assert "컨센서스 점수" not in html and "애널리스트" not in html and "의견 평균" not in html      # 컨센서스 순위/애널리스트 정보 제거
 
 
 def test_watchlist_add_remove_flow_and_links(monkeypatch):

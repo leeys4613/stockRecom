@@ -17,6 +17,7 @@ import pipeline
 import stockmaster
 import weights as weights_mod
 from scoring import picks as picks_mod
+from scoring import policy as policy_mod
 from collectors import macro, news, reports
 
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
@@ -74,9 +75,9 @@ def health():
 @app.get("/")
 def index(request: Request):
     with db.session() as conn:
-        top, _, picks_at = pipeline.top_picks_view(conn)
+        top, _, cons_at, view_at = pipeline.top_picks_view(conn)
         ctx = dict(active="dash", rows=macro.latest(conn), news=news.latest(conn),
-                   analysis=pipeline.latest_analysis(conn), picks=top, picks_at=picks_at,
+                   analysis=pipeline.latest_analysis(conn), picks=top, picks_at=cons_at, view_at=view_at,
                    tracker=pipeline.tracker_view(conn), group_names=config.AI_GROUP_NAMES,
                    watch_count=len(reports.watchlist(conn)))
     return templates.TemplateResponse(request, "index.html", ctx)
@@ -162,8 +163,9 @@ async def settings_allocation_save(request: Request):
 
 
 def _watch_ctx(conn, **extra):
-    _, evaluated, last = pipeline.top_picks_view(conn)
-    return dict(active="watch", items=evaluated, picks_at=last, markets=reports.MARKETS,
+    _, evaluated, cons_at, view_at = pipeline.top_picks_view(conn)
+    return dict(active="watch", items=evaluated, picks_at=cons_at, view_at=view_at, markets=reports.MARKETS,
+                level_text=policy_mod.LEVEL_TEXT, group_names=config.AI_GROUP_NAMES,
                 master=stockmaster.info(conn),
                 max_n=config.WATCHLIST_MAX, min_analysts=config.PICK_MIN_ANALYSTS,
                 flag_text=picks_mod.FLAG_TEXT, error=None, added=None, **extra)
@@ -187,7 +189,7 @@ def watchlist_search(q: str = ""):
 
 
 @app.post("/watchlist/add")
-async def watchlist_add(request: Request):
+async def watchlist_add(request: Request, background: BackgroundTasks):
     form = await request.form()
     try:
         with db.session() as conn:
@@ -199,6 +201,7 @@ async def watchlist_add(request: Request):
             ctx = _watch_ctx(conn)
         ctx["error"] = str(e)
         return templates.TemplateResponse(request, "watchlist.html", ctx, status_code=400)
+    background.add_task(pipeline.run_stock_views, None, None, None, None, True, {code})   # 추가한 종목의 AI 적합도 판정
     return RedirectResponse(f"/watchlist?added={code}", status_code=303)
 
 
@@ -231,7 +234,7 @@ async def watchlist_remove(request: Request):
 
 @app.post("/watchlist/refresh")
 def watchlist_refresh(background: BackgroundTasks):
-    background.add_task(pipeline.run_reports)
+    background.add_task(pipeline.run_reports_and_views)
     return RedirectResponse("/watchlist", status_code=303)
 
 

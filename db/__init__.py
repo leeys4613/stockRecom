@@ -94,6 +94,22 @@ CREATE TABLE IF NOT EXISTS capex_quarters (
     PRIMARY KEY (ticker, period_end)
 );
 
+-- 관심종목 AI 적합도: 대중심리 점수 + 주도섹터 점수 → 추천 점수 (현재 분석 기준, 종목별 이력)
+CREATE TABLE IF NOT EXISTS stock_views (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    code TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ok','failed')),
+    error TEXT,
+    analysis_id INTEGER,
+    crowd_effect INTEGER, crowd_score REAL, crowd_evidence TEXT, crowd_note TEXT,
+    sector_effect INTEGER, sector_score REAL, sector_groups TEXT, sector_note TEXT,
+    score REAL,
+    comment TEXT,
+    metrics TEXT     -- JSON: price, chg1d, chg10d, dd60, headlines 수 등 (판정 당시 입력 요약)
+);
+CREATE INDEX IF NOT EXISTS idx_stock_views_code ON stock_views(code, id);
+
 -- 종목 마스터: 검색(자동완성)용 코드/이름/시장. 기본 내장 40개 + 사용자가 올린 상장법인 목록
 CREATE TABLE IF NOT EXISTS stock_master (
     code TEXT PRIMARY KEY,

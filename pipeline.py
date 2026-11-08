@@ -4,6 +4,7 @@
 """
 import json
 import threading
+import time
 from datetime import datetime, timezone
 
 import calendar_kr
@@ -12,11 +13,13 @@ import db
 import allocations
 import gauge
 import performance
+import stockviews
 import weights as weights_mod
-from analyzer import llm
+from analyzer import llm, stock_llm
 from collectors import ai_tracker, macro, news, reports
 from scoring import engine, picks
 from scoring import policy as policy_mod
+from scoring import stock_view
 
 _lock = threading.Lock()
 
@@ -221,6 +224,7 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
                  json.dumps(pol, ensure_ascii=False) if pol else None))
             analysis_id = cur.lastrowid
         _fill_outcomes_best_effort(closes_fetcher)
+        _stock_views_best_effort(provider, history_fetcher)
         return analysis_id
     finally:
         _lock.release()
@@ -275,15 +279,131 @@ def run_reports(fetcher=None, delay=None):
     return reports.collect_watchlist(db.session, fetcher, delay)
 
 
+def run_reports_and_views(provider=None):
+    """컨센서스 스냅샷(참고용) + 관심종목 AI 적합도 판정(수동 갱신/일일 작업)."""
+    n = run_reports()
+    run_stock_views(provider, force=True)
+    return n
+
+
 def scheduled_reports_job():
     if not calendar_kr.is_trading_day(calendar_kr.today_kst()):
         return None
-    return run_reports()
+    return run_reports_and_views()
+
+
+_stock_lock = threading.Lock()
+
+
+def _stock_inputs(item, history_fetcher, headline_fetcher, industry_fetcher):
+    """종목 하나의 판정 입력: 가격 지표, 최근 헤드라인, 소속 테마 그룹. 일부가 실패해도 나머지는 계속한다."""
+    from collectors import macro
+
+    sym = reports.symbol(item["code"], item["market"])
+    out = dict(code=item["code"], name=item["name"], market=item["market"], price=None, titles=[], groups=[], errors=[])
+    try:
+        price, c1, c10, dd = ai_tracker.metrics_from_closes((history_fetcher or macro.yf_closes)(sym))
+        out["price"] = dict(price=round(price, 2), chg1d=round(c1, 1), chg10d=round(c10, 1), dd60=round(dd, 1))
+    except Exception as e:
+        out["errors"].append(f"가격 이력: {type(e).__name__}: {e}"[:120])
+    try:
+        out["titles"] = news.stock_headlines(item["name"], headline_fetcher)
+    except Exception as e:
+        out["errors"].append(f"뉴스: {type(e).__name__}: {e}"[:120])
+    industry = None
+    if item["code"] not in config.STOCK_SECTOR_GROUPS:
+        try:
+            industry = (industry_fetcher or reports.yf_industry)(sym)
+        except Exception:
+            industry = None
+    out["groups"] = stock_view.sector_groups_for(item["code"], industry)
+    return out
+
+
+def _market_context(conn, tview):
+    a = latest_analysis(conn)
+    if a is None:
+        return None
+    al = a["allocation"]
+    return dict(
+        final_score=a["final_score"], band=f"매수 가능성 {al['label']}" if al else None,
+        equity_range=f"{al['equity_min']}~{al['equity_max']}%" if al else None,
+        summary=a["summary"],
+        judgments={r: f"{v['level_text']}({v['effect']:+d})" for r, v in (a["policy"] or {}).items()},
+        ai_tracker=dict(groups=tracker_context(tview)["groups"], reading=tview["reading"],
+                        construction_reading=tview["build_reading"]))
+
+
+def run_stock_views(provider=None, history_fetcher=None, headline_fetcher=None, industry_fetcher=None, force=False, only=None):
+    """관심종목의 대중심리·주도섹터 적합도를 판정해 저장한다. 반환: 저장한 종목 수, 건너뛰면 None(실행 중/최소 간격 이내)."""
+    if not _stock_lock.acquire(blocking=False):
+        return None
+    try:
+        with db.session() as conn:
+            items = reports.watchlist(conn)
+            if only:
+                items = [w for w in items if w["code"] in only]
+            if not items:
+                return 0
+            if not force and not stockviews.due(conn, [w["code"] for w in items], config.STOCK_VIEW_MIN_HOURS):
+                return None
+            rows = macro.latest(conn)
+            tview = tracker_view(conn)
+            market = _market_context(conn, tview)
+            analysis_id = (conn.execute("SELECT MAX(id) FROM analyses").fetchone()[0])
+        kospi = {r["key"]: r["value"] for r in rows if r["key"] in ("KOSPI10D", "KOSPIDD") and r["freshness"] == "fresh"}
+        strength = stock_view.sector_strength(tview["groups"], kospi.get("KOSPI10D"))
+        inputs = []
+        for i, it in enumerate(items):
+            if i and config.STOCK_VIEW_DELAY_SEC:
+                time.sleep(config.STOCK_VIEW_DELAY_SEC)
+            inputs.append(_stock_inputs(it, history_fetcher, headline_fetcher, industry_fetcher))
+        ctx = dict(
+            market=market, kospi=dict(chg10d=None if "KOSPI10D" not in kospi else round(kospi["KOSPI10D"], 1),
+                                      dd10=None if "KOSPIDD" not in kospi else round(kospi["KOSPIDD"], 1)),
+            sector_strength=[dict(group=r["name"], chg10d=round(r["chg10d"], 1), dd60=None if r["dd60"] is None else round(r["dd60"], 1),
+                                  rs10=None if r["rs10"] is None else round(r["rs10"], 1), rank=r["rank"]) for r in strength],
+            stocks=[dict(code=x["code"], name=x["name"], sector_groups=[config.AI_GROUP_NAMES[g] for g in x["groups"]],
+                         price=x["price"], headlines=x["titles"]) for x in inputs])
+        expected = {x["code"] for x in inputs}
+        try:
+            prov = provider or llm.get_provider()
+            result = stock_llm.analyze_stocks(ctx, prov, expected)
+        except Exception as e:
+            result = dict(status="failed", items={}, error=f"{type(e).__name__}: {e}"[:300])
+        out = []
+        for x in inputs:
+            metrics = dict(x["price"] or {}, headlines=len(x["titles"]), errors=x["errors"])
+            raw = result["items"].get(x["code"])
+            if result["status"] != "ok" or raw is None:
+                out.append(stockviews.make_row(x["code"], analysis_id, groups=x["groups"], metrics=metrics,
+                                               error=result["error"] or "AI 판정에서 이 종목이 빠졌습니다"))
+            else:
+                out.append(stockviews.make_row(x["code"], analysis_id, stock_view.assess(raw, x["titles"], x["groups"]),
+                                               x["groups"], metrics))
+        with db.session() as conn:
+            stockviews.save(conn, out)
+        return len(out)
+    finally:
+        _stock_lock.release()
+
+
+def _stock_views_best_effort(provider, history_fetcher):
+    try:
+        run_stock_views(provider, history_fetcher, force=False)
+    except Exception:
+        pass
 
 
 def top_picks_view(conn, now=None):
-    """(Top Picks, 전체 평가 목록, 최신 수집 시각)."""
+    """(추천 Top N, 순위가 매겨진 전체 목록, 최신 컨센서스 수집 시각, 최신 판정 시각).
+
+    순위는 AI 적합도 점수(대중심리 + 주도섹터)다. 증권사 컨센서스는 참고 정보로만 각 항목에 붙는다."""
     rows = reports.stock_rows(conn)
-    top, evaluated = picks.top_picks(rows, now)
-    last = max((r["ok"]["fetched_at"] for r in rows if r["ok"]), default=None)
-    return top, evaluated, last
+    evaluated = [picks.evaluate(r, now) for r in rows]
+    for e in evaluated:
+        e["view_last"], e["view"] = stockviews.latest(conn, e["code"])
+    ranked = sorted((e for e in evaluated if e["view"]), key=lambda e: e["view"]["score"], reverse=True)
+    pending = [e for e in evaluated if not e["view"]]
+    last_cons = max((r["ok"]["fetched_at"] for r in rows if r["ok"]), default=None)
+    return ranked[:config.PICK_TOP_N], ranked + pending, last_cons, stockviews.last_time(conn)

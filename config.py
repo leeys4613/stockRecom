@@ -194,3 +194,23 @@ CAPEX_REFRESH_HOURS = 20
 CAPEX_QOQ_STRONG = 5.0              # 분기 대비 이 이상 늘면 '확대 지속', 0~이 값이면 '증가율 둔화', 음수면 '감소'
 CAPEX_QOQ_DECEL_PP = 3.0           # 직전 QoQ 보다 이만큼(%p) 낮아지면 '증가율 둔화' 추가 표시
 CAPEX_ANOMALY_QOQ = 1.8            # 직전 분기 대비 이 배수 이상이면 데이터 이상 의심 표시
+
+
+# --- 관심종목 AI 적합도(추천 점수): 대중심리 + 주도섹터 ---
+# 증권사 컨센서스는 낙관 편향이 커서 '참고 정보'로만 둔다. 순위는 현재 분석 기준의 두 점수로 정한다.
+STOCK_VIEW_WEIGHTS = {"crowd": 0.5, "sector": 0.5}   # 추천 점수 = 대중심리 점수 × 0.5 + 주도섹터 점수 × 0.5
+STOCK_VIEW_MIN_HOURS = 6        # 분석 실행 때마다 종목 판정을 다시 하지 않는 최소 간격(LLM 사용량 절약). 수동 갱신은 무시
+STOCK_VIEW_DELAY_SEC = 0.4      # 종목 간 조회 간격
+STOCK_HEADLINES = 6             # 종목별 최근 뉴스 헤드라인 수
+STOCK_NEWS_AGE_DAYS = 3
+STOCK_LEVEL_MAX = 3             # 대중심리·주도섹터 판정 단계: -3 ~ +3
+# 종목 -> 소속 테마 그룹(AI 트래커 그룹). 여기 없으면 Yahoo 업종으로 추정, 그래도 없으면 '섹터 판정 불가'(중립)
+STOCK_SECTOR_GROUPS = {
+    "005930": ["semis", "memory"], "000660": ["semis", "memory"],
+    "009150": ["semis"], "042700": ["semis"], "058470": ["semis"],
+    "267260": ["power"], "010120": ["power"], "298040": ["power"], "034020": ["power"], "103590": ["power"],
+}
+STOCK_INDUSTRY_GROUPS = {
+    "Semiconductors": ["semis"], "Semiconductor Equipment & Materials": ["semis"],
+    "Electrical Equipment & Parts": ["power"], "Utilities - Independent Power Producers": ["power"],
+}

@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>관심종목 · 증권사 컨센서스</h2>
-<p class="mut">관심종목의 증권사 컨센서스(목표가·투자의견)를 Yahoo Finance(yfinance)에서 매일 장 마감 후 저장하고, 목표가 추이를 직접 계산합니다.
-  네이버 증권·한경컨센서스는 자동 수집을 금지(robots.txt)하므로 쓰지 않고, 아래 <b>바로가기 링크</b>로 직접 확인하세요.
-  증권사 컨센서스는 후행적이고 낙관 편향이 있어 <b>매수 추천이 아닙니다</b>.</p>
+<h2>관심종목 · AI 적합도</h2>
+<p class="mut">종목마다 <b>대중심리 점수</b>(최근 뉴스 논조·투자자 반응)와 <b>주도섹터 적합도</b>(지금 시장의 주도 섹터인지)를 현재 분석 기준으로 판정해
+  <b>추천 점수</b>로 합산합니다(각 50%). 증권사 컨센서스(목표가)는 낙관 편향이 커서 순위에 쓰지 않고 접어 둔 "참고"로만 보여줍니다.
+  섹터 판정은 지표가 있는 AI·반도체·메모리·전력 계열에만 가능하며, 그 밖의 종목은 섹터 점수가 중립(50)입니다.
+  점수는 <b>매수 추천이 아니며</b> 검증 전입니다.</p>
 
 {% if added %}<div class="card" id="added">{{ added }} 추가 완료 (첫 조회 성공). 목표가 추이는 {{ 5 }}일 이상 쌓이면 표시됩니다.</div>{% endif %}
 {% if error %}<div class="card warn" id="error">추가 실패: {{ error }}</div>{% endif %}
@@ -83,35 +84,63 @@
 </script>
 
 <form method="post" action="/watchlist/refresh" style="margin:10px 0">
-  <button type="submit">컨센서스 지금 갱신</button>
-  <span class="mut">{% if picks_at %}마지막 수집 {{ picks_at | kst }}{% else %}아직 수집 기록이 없습니다{% endif %} · 백그라운드 실행, 잠시 후 새로고침</span>
+  <button type="submit">추천 갱신 (AI 판정 + 컨센서스)</button>
+  <span class="mut">{% if view_at %}마지막 AI 판정 {{ view_at | kst }}{% else %}아직 AI 판정 전{% endif %}{% if picks_at %} · 컨센서스 수집 {{ picks_at | kst }}{% endif %} · 백그라운드 실행(1분 안팎), 잠시 후 새로고침</span>
 </form>
 
 <div id="watch">
   {% for e in items %}
-  {% set s = e.snap %}
+  {% set s = e.snap %}{% set v = e.view %}
   <div class="card stock" data-code="{{ e.code }}">
     <div class="stock-head">
       <div><b style="font-size:17px">{{ e.name }}</b> <span class="mut">{{ e.code }}.{{ e.market }}</span></div>
       <form method="post" action="/watchlist/remove" style="margin:0"><input type="hidden" name="code" value="{{ e.code }}"><button type="submit" title="삭제" aria-label="{{ e.name }} 삭제">✕</button></form>
     </div>
-    <div class="metrics">
-      <div class="m"><span class="k">현재가</span><span class="v">{% if s and s.price %}{{ "{:,.0f}".format(s.price) }}{% else %}-{% endif %}</span></div>
-      <div class="m"><span class="k">목표가 (평균)</span>
-        <span class="v">{% if s and s.target_mean %}{{ "{:,.0f}".format(s.target_mean) }}{% else %}-{% endif %}</span>
-        {% if e.upside is not none %}<span class="sub {{ 'up' if e.upside >= 0 else 'down' }}">괴리 {{ "{:+.0f}".format(e.upside * 100) }}%</span>{% endif %}</div>
-      <div class="m"><span class="k">의견 평균</span>
-        <span class="v">{% if s and s.rec_mean %}{{ "{:.1f}".format(s.rec_mean) }}{% else %}-{% endif %}</span>
-        {% if e.opinion %}<span class="sub">{{ e.opinion }}</span>{% endif %}</div>
-      <div class="m"><span class="k">애널리스트</span><span class="v">{% if s and s.n_analysts %}{{ s.n_analysts }}명{% else %}-{% endif %}</span></div>
-      <div class="m"><span class="k">목표가 추이</span>
-        {% if e.trend is not none %}<span class="v {{ 'up' if e.trend >= 0 else 'down' }}">{{ "{:+.1f}".format(e.trend * 100) }}%</span><span class="sub">{{ "{:.0f}".format(e.trend_days) }}일간</span>
-        {% else %}<span class="v mut">축적 중</span>{% endif %}</div>
+    {% if v %}
+    <div class="rec">
+      <div><span class="num">{{ "{:.0f}".format(v.score) }}</span><span class="mut"> / 100<br>추천 점수</span></div>
+      <div class="subscores">
+        <div class="row">대중심리 <b>{{ "{:.0f}".format(v.crowd_score) }}</b> <span class="mut">({{ level_text[v.crowd_effect] }})</span><div class="bar"><span style="width:{{ v.crowd_score }}%"></span></div></div>
+        <div class="row">주도섹터 적합도 <b>{{ "{:.0f}".format(v.sector_score) }}</b> <span class="mut">({{ level_text[v.sector_effect] }})</span><div class="bar"><span style="width:{{ v.sector_score }}%"></span></div></div>
+      </div>
     </div>
+    {% if v.comment %}<div style="margin:4px 0">{{ v.comment }}</div>{% endif %}
+    {% if e.view_last and e.view_last.status == 'failed' %}<div class="warn">최근 AI 판정 실패(이전 판정을 표시 중): {{ e.view_last.error }}</div>{% endif %}
+    <details style="margin:4px 0">
+      <summary class="mut" style="cursor:pointer">판정 근거 보기</summary>
+      <div style="margin-top:6px"><b>대중심리</b> <span class="mut">— {{ level_text[v.crowd_effect] }}({{ "{:+d}".format(v.crowd_effect) }})</span>
+        {% if v.crowd_evidence %}<ul class="lines">{% for t in v.crowd_evidence %}<li>{{ t }}</li>{% endfor %}</ul>
+        {% else %}<div class="mut">{{ v.crowd_note or '뚜렷한 논조 없음' }}</div>{% endif %}</div>
+      <div style="margin-top:6px"><b>주도섹터</b> <span class="mut">— {{ level_text[v.sector_effect] }}({{ "{:+d}".format(v.sector_effect) }})
+        {% if v.sector_groups %}· {% for g in v.sector_groups %}{{ group_names[g] }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</span>
+        <div class="mut">{{ v.sector_note or '-' }}</div></div>
+      <div class="mut" style="margin-top:6px">판정 {{ v.created_at | kst }} · 기사 {{ v.metrics.get('headlines', 0) }}건</div>
+    </details>
+    {% else %}
+    <div class="mut" style="margin:6px 0">AI 적합도 판정 전입니다. 위 "추천 갱신"을 눌러 주세요.
+      {% if e.view_last and e.view_last.status == 'failed' %}<br><span class="warn">최근 판정 실패: {{ e.view_last.error }}</span>{% endif %}</div>
+    {% endif %}
+    <div class="metrics">
+      <div class="m"><span class="k">현재가</span><span class="v">{% if s and s.price %}{{ "{:,.0f}".format(s.price) }}{% elif v and v.metrics.get('price') %}{{ "{:,.0f}".format(v.metrics.price) }}{% else %}-{% endif %}</span></div>
+      <div class="m"><span class="k">10거래일 변화</span>{% if v and v.metrics.get('chg10d') is not none %}<span class="v {{ 'up' if v.metrics.chg10d >= 0 else 'down' }}">{{ "{:+.1f}".format(v.metrics.chg10d) }}%</span>{% else %}<span class="v mut">-</span>{% endif %}</div>
+      <div class="m"><span class="k">60일 고점 대비</span>{% if v and v.metrics.get('dd60') is not none %}<span class="v {{ 'up' if v.metrics.dd60 >= 0 else 'down' }}">{{ "{:+.1f}".format(v.metrics.dd60) }}%</span>{% else %}<span class="v mut">-</span>{% endif %}</div>
+    </div>
+    <details style="margin:4px 0">
+      <summary class="mut" style="cursor:pointer">증권사 컨센서스 (참고용 · 낙관 편향 주의)</summary>
+      <div class="metrics" style="margin-top:6px">
+        <div class="m"><span class="k">목표가 (평균)</span>
+          <span class="v">{% if s and s.target_mean %}{{ "{:,.0f}".format(s.target_mean) }}{% else %}-{% endif %}</span>
+          {% if e.upside is not none %}<span class="sub {{ 'up' if e.upside >= 0 else 'down' }}">괴리 {{ "{:+.0f}".format(e.upside * 100) }}%</span>{% endif %}</div>
+        <div class="m"><span class="k">목표가 추이</span>
+          {% if e.trend is not none %}<span class="v {{ 'up' if e.trend >= 0 else 'down' }}">{{ "{:+.1f}".format(e.trend * 100) }}%</span><span class="sub">{{ "{:.0f}".format(e.trend_days) }}일간</span>
+          {% else %}<span class="v mut">축적 중</span>{% endif %}</div>
+      </div>
+      <div class="flags" style="margin-top:4px">
+        {% for f in e.flags %}<span class="badge {{ 'failed' if f in ('failed','no_data') else 'stale' }}">{{ flag_text[f] }}</span>{% endfor %}
+        {% if e.last and e.last.status == 'failed' %}<span class="mut">{{ e.last.fetched_at | kst }} {{ e.last.error }}</span>{% endif %}
+      </div>
+    </details>
     <div class="flags">
-      {% for f in e.flags %}<span class="badge {{ 'failed' if f in ('failed','no_data') else 'stale' }}">{{ flag_text[f] }}</span>{% endfor %}
-      {% if e.eligible %}<span class="badge fresh">Top Picks 후보</span>{% endif %}
-      {% if e.last and e.last.status == 'failed' %}<span class="mut">{{ e.last.fetched_at | kst }} {{ e.last.error }}</span>{% endif %}
       <a href="https://finance.naver.com/item/main.naver?code={{ e.code }}" target="_blank" rel="noopener noreferrer" style="color:inherit">네이버 증권 ↗</a>
       <a href="https://consensus.hankyung.com/" target="_blank" rel="noopener noreferrer" style="color:inherit">한경컨센서스 ↗</a>
     </div>
@@ -120,5 +149,5 @@
   <div class="card mut">관심종목이 없습니다. 위에서 종목을 검색해 추가하세요.</div>
   {% endfor %}
 </div>
-<p class="mut">Top Picks 후보 조건: 최신 데이터(3일 이내) · 애널리스트 {{ min_analysts }}명 이상 · 목표가 괴리 +100% 이하(초과 시 데이터 이상 의심) · 목표가 평균 &gt; 현재가.</p>
+<p class="mut">순위는 추천 점수(대중심리 50% + 주도섹터 50%)입니다. 대중심리는 최근 3일 뉴스 헤드라인이 근거로 확인될 때만 반영되며, 근거를 확인하지 못하면 0(중립)으로 처리합니다.</p>
 {% endblock %}

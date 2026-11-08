@@ -2,7 +2,7 @@ import pytest
 
 import config
 import performance
-from collectors import ai_tracker, macro, reports
+from collectors import ai_tracker, macro, news, reports
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +24,11 @@ def isolated(tmp_path, monkeypatch):
     def no_capex(ticker):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(ai_tracker, "yf_capex", no_capex)
+
+    def no_http(url):
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(news, "http_fetch", no_http)                 # 종목 헤드라인 등 기본 조회 차단
+    monkeypatch.setattr(reports, "yf_industry", lambda sym: None)    # Yahoo 업종 조회 차단
     monkeypatch.setattr(macro, "yf_closes", lambda symbol, period="2mo": flat_closes(start=20.0 if symbol == "^VIX" else 5000.0))
 
 
@@ -57,7 +62,7 @@ class FakeProvider:
     def __init__(self, payload=None, exc=None):
         self.payload, self.exc, self.calls = payload, exc, 0
 
-    def complete(self, prompt):
+    def complete(self, prompt, system=None, schema=None):
         self.calls += 1
         if self.exc:
             raise self.exc

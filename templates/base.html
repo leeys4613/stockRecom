@@ -47,6 +47,12 @@
   .m .v { font-weight:600; white-space:nowrap; }
   .m .sub { font-size:12px; color:var(--mut); }
   .m .up { color:#d33; } .m .down { color:#36c; }  /* .m .sub 의 색을 덮어쓰도록 우선순위 확보 */
+  .rec { display:flex; gap:14px; align-items:center; margin:8px 0 4px; }
+  .rec .num { font-size:34px; font-weight:700; line-height:1; }
+  .subscores { flex:1; min-width:0; font-size:13px; }
+  .subscores .row { margin:3px 0; }
+  .bar { height:6px; background:var(--bd); border-radius:3px; margin-top:2px; }
+  .bar span { display:block; height:100%; border-radius:3px; background:#4f8cff; }
   .stock-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
   .flags { font-size:12px; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
   #offline-banner { display:none; background:#d9a000; color:#111; padding:10px 14px; border-radius:8px; margin:10px 0; font-size:14px; }

@@ -121,3 +121,10 @@ def latest(conn):
             headlines=items,
         ))
     return out
+
+
+def stock_headlines(name, fetcher=None):
+    """종목명으로 최근 뉴스 헤드라인(제목 목록). 실패하면 예외 — 호출자가 '기사 없음'으로 처리한다."""
+    q = f'"{name}" 주가 OR 주식 OR 전망 OR 실적 when:{config.STOCK_NEWS_AGE_DAYS}d'
+    content = (fetcher or http_fetch)(RSS_URL.format(q=quote(q), locale=DEFAULT_LOCALE))
+    return [i["title"] for i in parse_items(content, config.STOCK_HEADLINES, config.STOCK_NEWS_AGE_DAYS)]
