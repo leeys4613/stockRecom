@@ -62,3 +62,25 @@ def build(score, bands, base_score=None):
         x1, y1 = _pt(a, R_OUT + 9)
         out["base_tick"] = dict(x0=round(x0, 2), y0=round(y0, 2), x1=round(x1, 2), y1=round(y1, 2))
     return out
+
+
+BAR_W = 300.0  # 권장 비중 막대의 SVG 폭 (viewBox 기준)
+
+
+def allocation_bar(allocation, cap=None):
+    """권장 비중 범위 막대. 주식 최소까지는 '확정 주식', 최대부터는 '확정 현금', 그 사이는 가변 구간.
+
+    allocation: engine.allocation() 결과. 반환 좌표는 viewBox(0~BAR_W) 기준. 가변 폭이 0이면 flex 는 None.
+    """
+    lo, hi = float(allocation["equity_min"]), float(allocation["equity_max"])
+    k = BAR_W / 100.0
+    flex = None if hi <= lo else dict(x=round(lo * k, 2), w=round((hi - lo) * k, 2))
+    return dict(
+        equity=dict(x=0.0, w=round(lo * k, 2)),
+        flex=flex,
+        cash=dict(x=round(hi * k, 2), w=round((100 - hi) * k, 2)),
+        cap_x=None if cap is None or not 0 < cap < 100 else round(cap * k, 2),
+        cap=cap, w=BAR_W,
+        equity_text=f"{allocation['equity_min']}~{allocation['equity_max']}%",
+        cash_text=f"{allocation['cash_min']}~{allocation['cash_max']}%",
+    )

@@ -34,10 +34,41 @@
         {% if analysis.llm_status == 'ok' %}· AI 보정 {{ "{:+d}".format(analysis.adjustment) }}{% endif %}
         · 지표 반영률 {{ "{:.0f}".format(analysis.coverage * 100) }}%
         {% if analysis.weight_label %}· 가중치 {{ analysis.weight_label }}{% endif %}</div>
-      {% if analysis.allocation %}
-      <div style="margin-top:8px;text-align:center">매수 가능성 {{ analysis.allocation.label }} 구간 ({{ analysis.allocation_label }}) · 권장 주식 비중
-        <b>{{ analysis.allocation.equity_min }}~{{ analysis.allocation.equity_max }}%</b>,
-        현금 {{ analysis.allocation.cash_min }}~{{ analysis.allocation.cash_max }}%</div>
+      {% if analysis.allocation and analysis.allocbar %}
+      {% set ab = analysis.allocbar %}
+      <div id="alloc" style="margin-top:16px">
+        <div class="mut" style="text-align:center">권장 비중 ({{ analysis.allocation_label }})</div>
+        <svg id="allocbar" viewBox="0 0 300 54" role="img" style="width:100%;max-width:340px;display:block;margin:4px auto 0"
+             aria-label="권장 주식 비중 {{ ab.equity_text }}, 현금 {{ ab.cash_text }}">
+          <defs>
+            <linearGradient id="gEq" x1="0" x2="1"><stop offset="0" stop-color="#6aa5ff"/><stop offset="1" stop-color="#2f6fe8"/></linearGradient>
+            <linearGradient id="gCash" x1="0" x2="1"><stop offset="0" stop-color="#8d95a5"/><stop offset="1" stop-color="#6a7283"/></linearGradient>
+            <pattern id="gFlex" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="8" height="8" fill="#2f6fe8"/><rect width="4" height="8" fill="#7d8697"/></pattern>
+            <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".30"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient>
+            <clipPath id="barClip"><rect x="0" y="18" width="{{ ab.w }}" height="22" rx="11"/></clipPath>
+          </defs>
+          <rect x="0" y="18" width="{{ ab.w }}" height="22" rx="11" fill="var(--bd)" opacity=".6"/>
+          <g clip-path="url(#barClip)">
+            {% if ab.equity.w > 0 %}<rect class="grow" id="bar-equity" x="{{ ab.equity.x }}" y="18" width="{{ ab.equity.w }}" height="22" fill="url(#gEq)"/>{% endif %}
+            {% if ab.flex %}<rect class="grow d2" id="bar-flex" x="{{ ab.flex.x }}" y="18" width="{{ ab.flex.w }}" height="22" fill="url(#gFlex)"/>{% endif %}
+            {% if ab.cash.w > 0 %}<rect class="grow d3" id="bar-cash" x="{{ ab.cash.x }}" y="18" width="{{ ab.cash.w }}" height="22" fill="url(#gCash)"/>{% endif %}
+            <rect x="0" y="18" width="{{ ab.w }}" height="22" fill="url(#gloss)"/>
+          </g>
+          {% if ab.cap_x %}
+          <line x1="{{ ab.cap_x }}" y1="12" x2="{{ ab.cap_x }}" y2="46" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" opacity="0.75"/>
+          <text x="{{ ab.cap_x }}" y="9" font-size="7.5" text-anchor="middle" fill="currentColor" opacity="0.75">주식 상한 {{ ab.cap }}%</text>
+          {% endif %}
+          <text x="0" y="52" font-size="8" fill="currentColor" opacity="0.6">0%</text>
+          <text x="{{ ab.w }}" y="52" font-size="8" text-anchor="end" fill="currentColor" opacity="0.6">100%</text>
+        </svg>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;max-width:340px;margin:8px auto 0">
+          <div><span class="mut">주식</span> <b style="font-size:21px;color:#4f8cff">{{ ab.equity_text }}</b></div>
+          <div style="text-align:right"><span class="mut">현금</span> <b style="font-size:21px;color:#8d95a5">{{ ab.cash_text }}</b></div>
+        </div>
+        {% if ab.flex %}<div class="mut" style="text-align:center;margin-top:4px">줄무늬 = 주식으로도 현금으로도 갈 수 있는 폭</div>{% endif %}
+        <div class="mut" style="text-align:center;margin-top:6px">매수 가능성 {{ analysis.allocation.label }} 구간 · 권장 주식 비중 {{ ab.equity_text }}, 현금 {{ ab.cash_text }}</div>
+      </div>
       {% endif %}
     {% else %}
       <div class="warn" style="text-align:center">점수를 계산할 수 있는 최신 지표가 없습니다.</div>

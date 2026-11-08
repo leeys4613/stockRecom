@@ -34,6 +34,10 @@
   ul.news { margin:4px 0 12px; padding-left:18px; font-size:14px; }
   ul.news a { color:inherit; }
   button { padding:8px 14px; }
+  .grow { transform-box: fill-box; transform-origin: left center; animation: grow .9s cubic-bezier(.2,.8,.2,1) both; }
+  .grow.d2 { animation-delay: .12s; } .grow.d3 { animation-delay: .24s; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .grow { animation: none; } }
   #offline-banner { display:none; background:#d9a000; color:#111; padding:10px 14px; border-radius:8px; margin:10px 0; font-size:14px; }
   footer { color:var(--mut); font-size:12px; margin-top:24px; }
 </style>

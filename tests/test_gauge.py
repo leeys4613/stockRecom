@@ -94,3 +94,52 @@ def test_dashboard_gauge_without_score():
         html = c.get("/").text
     assert 'id="gauge"' in html and 'id="needle"' not in html
     assert "최신 지표가 없습니다" in html
+
+
+# ---- 권장 비중 막대 ----
+def alloc(lo, hi):
+    return dict(equity_min=lo, equity_max=hi, cash_min=100 - hi, cash_max=100 - lo)
+
+
+def test_allocation_bar_segments_are_contiguous_and_cover_width():
+    ab = gauge.allocation_bar(alloc(30, 45), cap=70)
+    assert ab["equity"] == dict(x=0.0, w=90.0)
+    assert ab["flex"] == dict(x=90.0, w=45.0)
+    assert ab["cash"] == dict(x=135.0, w=165.0)
+    total = ab["equity"]["w"] + ab["flex"]["w"] + ab["cash"]["w"]
+    assert total == pytest.approx(gauge.BAR_W)
+    assert ab["cap_x"] == 210.0 and ab["equity_text"] == "30~45%" and ab["cash_text"] == "55~70%"
+
+
+def test_allocation_bar_no_flex_when_range_is_a_point():
+    ab = gauge.allocation_bar(alloc(40, 40), cap=70)
+    assert ab["flex"] is None
+    assert ab["equity"]["w"] + ab["cash"]["w"] == pytest.approx(gauge.BAR_W)
+
+
+def test_allocation_bar_edges():
+    zero = gauge.allocation_bar(alloc(0, 15), cap=70)
+    assert zero["equity"]["w"] == 0 and zero["flex"]["w"] == pytest.approx(45.0)
+    top = gauge.allocation_bar(alloc(50, 70), cap=70)
+    assert top["cash"]["x"] == pytest.approx(210.0) and top["cap_x"] == 210.0  # 상한선 = 주식 최대 끝
+    assert gauge.allocation_bar(alloc(10, 20), cap=None)["cap_x"] is None
+
+
+def test_dashboard_renders_allocation_chart():
+    db.init_db()
+    pipeline.run_once(FakeProvider(GOOD), macro_ok, fake_rss)
+    with TestClient(main.app) as c:
+        html = c.get("/").text
+    assert 'id="allocbar"' in html and 'id="bar-equity"' in html and 'id="bar-cash"' in html
+    assert "주식 상한 70%" in html and "prefers-reduced-motion" in html
+    assert 'aria-label="권장 주식 비중' in html and "줄무늬" in html
+
+
+def test_dashboard_has_no_allocation_chart_without_score():
+    db.init_db()
+
+    def fail(symbol):
+        raise RuntimeError("down")
+    pipeline.run_once(FakeProvider(GOOD), fail, fake_rss)
+    with TestClient(main.app) as c:
+        assert 'id="allocbar"' not in c.get("/").text

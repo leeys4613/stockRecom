@@ -114,8 +114,11 @@ def latest_analysis(conn):
             else None) or allocations.get_active(conn)
     d["allocation_label"] = aset["label"]
     d["gauge"] = gauge.build(d["final_score"], aset["bands"], d["base_score"])
+    d["allocbar"] = None  # allocation 계산 뒤에 채운다
     d["allocation"] = (engine.allocation(d["final_score"], aset["bands"])
                        if d["final_score"] is not None else None)
+    if d["allocation"]:
+        d["allocbar"] = gauge.allocation_bar(d["allocation"], config.EQUITY_CAP_PCT)
     s = d["final_score"]
     d["signal"] = (None if s is None else
                    "green" if s >= config.SIGNAL_GREEN else

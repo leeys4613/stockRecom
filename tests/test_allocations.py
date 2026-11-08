@@ -171,4 +171,4 @@ def test_dashboard_shows_allocation_rule_version():
     pipeline.run_once(FakeProvider(GOOD), macro_ok, fake_rss)
     with client() as c:
         r = c.get("/")
-        assert "구간 (v1 초기안)" in r.text and "권장 주식 비중" in r.text
+        assert "권장 비중 (v1 초기안)" in r.text and "권장 주식 비중" in r.text
