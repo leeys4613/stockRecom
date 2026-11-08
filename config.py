@@ -18,6 +18,10 @@ MACRO_INDICATORS = {
     "BTC": ("비트코인", "BTC-USD"),
     "SOX": ("필라델피아 반도체", "^SOX"),
     "WTI": ("WTI 원유", "CL=F"),
+    # 미국 정치·정책 충격이 시장에 가장 먼저 나타나는 위험/불확실성 지표
+    "VIX": ("VIX 공포지수", "^VIX"),
+    "SPX": ("S&P 500", "^GSPC"),
+    "DXY": ("달러인덱스", "DX-Y.NYB"),
 }
 
 # 데이터 신선도 기준(시간): 이보다 오래되면 stale
@@ -26,13 +30,16 @@ STALE_AFTER_HOURS = 6
 # --- 점수 엔진 초기안 (⚠ 사람 확인 필요) ---
 # 가중치: 양수 = 지표가 오르면 점수↑, 음수 = 오르면 점수↓. 절대값 합 = 1.0
 SCORE_WEIGHTS = {
-    "SOX": 0.30,
-    "USDKRW": -0.25,
-    "US10Y": -0.15,
-    "USDJPY": 0.05,
-    "USDCNH": -0.10,
-    "BTC": 0.05,
-    "WTI": -0.10,
+    "SOX": 0.22,
+    "USDKRW": -0.20,
+    "US10Y": -0.12,
+    "USDJPY": 0.04,
+    "USDCNH": -0.08,
+    "BTC": 0.04,
+    "WTI": -0.08,
+    "VIX": -0.10,
+    "SPX": 0.08,
+    "DXY": -0.04,
 }
 # 지표 방향(고정): +1 = 지표가 오르면 점수↑, -1 = 오르면 점수↓. 사용자 조정은 크기만 허용한다
 SCORE_DIRECTION = {k: (1 if w >= 0 else -1) for k, w in SCORE_WEIGHTS.items()}
@@ -45,6 +52,9 @@ SCORE_SATURATION_PCT = {
     "USDCNH": 0.7,
     "BTC": 5.0,
     "WTI": 4.0,
+    "VIX": 20.0,
+    "SPX": 2.0,
+    "DXY": 0.7,
 }
 # 점수 구간 -> 주식 비중 범위(%). (하한점수, 라벨, 주식 최소, 주식 최대) 내림차순 검사
 # 라벨은 화면에서 "매수 가능성 <라벨>"로 표시된다 (확률이 아니라 점수 구간)
@@ -64,7 +74,17 @@ NEWS_TOPICS = {
     "japan": ("일본·BOJ·엔화", "일본은행 OR BOJ OR 엔화 OR 엔캐리"),
     "korea": ("한국 증시·수급", "코스피 외국인 OR 원달러 환율"),
     "bitcoin": ("비트코인", "비트코인"),
+    # 정책 반영용(AI 가 -3~+3 단계로만 판정, 점수 반영폭은 상한이 있음)
+    "us_policy": ("미국 정책·정치", "트럼프 OR 백악관 OR 관세 OR 무역협상 OR 반도체 수출규제 OR 대중 제재 OR 연준 인사 OR 셧다운 OR 중간선거"),
+    "kr_policy": ("한국 증시 부양·자본시장 정책", "증시 부양 OR 밸류업 OR 상법 개정 OR 배당소득 분리과세 OR 공매도 OR 자본시장 활성화"),
 }
+# 구글 뉴스 RSS 는 최신순이 아니라 관련도순이라 오래된 기사가 섞인다 → 기간 제한(검색어 + 발행일 필터)
+NEWS_DEFAULT_MAX_AGE_DAYS = 3
+NEWS_MAX_AGE_DAYS = {"us_policy": 3, "kr_policy": 7}
+NEWS_PER_TOPIC_OVERRIDE = {"us_policy": 8, "kr_policy": 8}
+POLICY_TOPICS = {"us": "us_policy", "kr": "kr_policy"}
+POLICY_LEVEL_MAX = 3                      # AI 판정 단계: -3(매우 부정) ~ +3(매우 긍정)
+POLICY_CAPS_DEFAULT = {"us": 10.0, "kr": 6.0}  # 정책 반영 점수 상한(±점). 단계/3 * 상한
 NEWS_PER_TOPIC = 5
 NEWS_TIMEOUT_SEC = 15
 
@@ -75,7 +95,7 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 CLAUDE_BIN = os.getenv("CLAUDE_BIN", "claude")
 LLM_TIMEOUT_SEC = 180
 LLM_RETRIES = 1  # 검증 실패/일시 오류 시 추가 시도 횟수
-LLM_MAX_ADJUSTMENT = 10  # PRD: LLM 정성 보정 ±10점
+LLM_MAX_ADJUSTMENT = 5   # 정책 반영 항목이 따로 생겨 일반 정성 보정은 ±5점으로 축소 (이중 반영 방지)
 
 # --- 스케줄 (KST, 거래일에만) ---
 SCHEDULER_ENABLED = os.getenv("STOCKRECOM_SCHEDULER", "1") == "1"

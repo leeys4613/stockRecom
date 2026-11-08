@@ -22,16 +22,24 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "REPORTS_DELAY_SEC", 0)
 
 
-RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
-<item><title>  \xec\x97\xb0\xec\xa4\x80   \xea\xb8\x88\xeb\xa6\xac \xeb\x8f\x99\xea\xb2\xb0 </title>
-<link>https://example.com/a</link><source url="https://x.com">\xeb\xa7\xa4\xea\xb2\xbd</source>
-<pubDate>Mon, 02 Nov 2026 00:00:00 GMT</pubDate></item>
-<item><title>bad link item</title><link>javascript:alert(1)</link></item>
-</channel></rss>"""
+def make_rss(items=None):
+    """items: [(title, link, hours_ago 또는 None(발행일 없음))]. 기본은 최근 기사 2건."""
+    from email.utils import format_datetime
+    from datetime import datetime, timedelta, timezone
+
+    items = items if items is not None else [
+        ("  연준   금리 동결 ", "https://example.com/a", 2), ("bad link item", "javascript:alert(1)", 5)]
+    now = datetime.now(timezone.utc)
+    body = ""
+    for title, link, hours in items:
+        pub = f"<pubDate>{format_datetime(now - timedelta(hours=hours))}</pubDate>" if hours is not None else ""
+        src = '<source url="https://x.com">매경</source>' if link.startswith("https") else ""
+        body += f"<item><title>{title}</title><link>{link}</link>{src}{pub}</item>"
+    return f'<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>{body}</channel></rss>'.encode("utf-8")
 
 
 def fake_rss(url):
-    return RSS
+    return make_rss()
 
 
 def macro_ok(symbol):

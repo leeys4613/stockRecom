@@ -1,4 +1,4 @@
-"""LLM 요약 + 정성 보정(±10). 점수 자체는 scoring/ 의 규칙 엔진이 계산한다.
+"""LLM 요약 + 정책 판정(-3~+3 단계) + 정성 보정. 점수 환산은 scoring/ 이 한다.
 
 공급자: claude_cli (Pro 구독 로그인, 키 불필요) / anthropic_api (ANTHROPIC_API_KEY).
 출력은 pydantic 으로 검증하고, 보정값은 스키마와 코드 양쪽에서 ±MAX 로 제한한다.
@@ -21,7 +21,15 @@ SYSTEM_PROMPT = (
     "3. adjustment 는 정량 점수가 반영하지 못한 뉴스의 정성 영향만 -{m}~+{m} 정수로 보정한다. "
     "뚜렷한 근거가 없으면 0이다.\n"
     "4. missing(결측 지표)이 있으면 risk_comment 에 그 한계를 반드시 언급한다.\n"
-    "5. summary_3lines 는 정확히 3개의 짧은 한국어 문장(상승/하락 요인 요약)이다."
+    "5. summary_3lines 는 정확히 3개의 짧은 한국어 문장(상승/하락 요인 요약)이다.\n"
+    "6. policy_news 의 us 는 미국 정치·정책(관세·무역·수출통제·제재·연준 독립성/인사·정부 셧다운·선거 등), "
+    "kr 는 한국 증시 부양·자본시장 정책(밸류업·상법 개정·세제·공매도·시장 활성화 등)이다. 각각 "
+    "us_policy_effect / kr_policy_effect 를 -3~+3 정수로 판정한다: -3 매우 부정(시장에 큰 충격을 주는 정책이 확정·시행), "
+    "-2 부정, -1 약한 부정, 0 영향 없음·불확실, +1 약한 긍정, +2 긍정, +3 매우 긍정(구체적 부양책 확정·시행).\n"
+    "7. 정책 판정의 근거는 해당 지역 policy_news 헤드라인에서만 고르고, 근거 헤드라인을 글자 그대로(생략·수정 없이) "
+    "us_policy_evidence / kr_policy_evidence 에 1~3개 적는다. 근거가 없으면 effect 는 0이다. 전망·의견·논평·"
+    "오래된 이야기만 있으면 0이다. 같은 이슈를 중복 반영하지 마라.\n"
+    "8. adjustment 는 policy_news 에서 이미 반영한 내용을 제외한 나머지 뉴스의 영향만 보정한다."
 ).format(m=config.LLM_MAX_ADJUSTMENT)
 
 
@@ -29,6 +37,11 @@ class Analysis(BaseModel):
     summary_3lines: list[str] = Field(min_length=3, max_length=3)
     adjustment: int = Field(ge=-config.LLM_MAX_ADJUSTMENT, le=config.LLM_MAX_ADJUSTMENT)
     risk_comment: str = Field(max_length=500)
+    # 정책 판정: 단계만 쓰고(점수 환산은 코드가 함), 근거는 입력 헤드라인 원문. 빠지면 0(영향 없음)으로 본다
+    us_policy_effect: int = Field(0, ge=-config.POLICY_LEVEL_MAX, le=config.POLICY_LEVEL_MAX)
+    us_policy_evidence: list[str] = Field(default_factory=list, max_length=3)
+    kr_policy_effect: int = Field(0, ge=-config.POLICY_LEVEL_MAX, le=config.POLICY_LEVEL_MAX)
+    kr_policy_evidence: list[str] = Field(default_factory=list, max_length=3)
 
 
 def build_prompt(ctx):

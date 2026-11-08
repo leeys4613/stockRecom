@@ -103,15 +103,18 @@ def performance_page(request: Request, v: int | None = None):
 
 def _settings_ctx(conn, **extra):
     active = weights_mod.get_active(conn)
+    # 정책/지표 도입 전의 구 버전이 적용 중이면 없는 지표는 0 / 기본 포화값으로 표시한다
     rows = [dict(key=k, name=name, direction=config.SCORE_DIRECTION[k],
-                 share=abs(active["weights"][k]) * 100, sat=active["saturation"][k])
+                 share=abs(active["weights"].get(k, 0.0)) * 100,
+                 sat=active["saturation"].get(k, config.SCORE_SATURATION_PCT[k]))
             for k, (name, _) in config.MACRO_INDICATORS.items()]
+    policy = active["policy"] or dict(config.POLICY_CAPS_DEFAULT)
     a_active = allocations.get_active(conn)
     return dict(active="settings", rows=rows, current=active, history=weights_mod.list_all(conn),
                 indicators=config.MACRO_INDICATORS, sat_min=weights_mod.SAT_MIN,
                 sat_max=weights_mod.SAT_MAX, error=None, saved=None,
                 bands=a_active["bands"], a_current=a_active, a_history=allocations.list_all(conn),
-                cap=config.EQUITY_CAP_PCT, a_error=None, a_saved=None, **extra)
+                cap=config.EQUITY_CAP_PCT, policy=policy, a_error=None, a_saved=None, **extra)
 
 
 @app.get("/settings")
@@ -128,9 +131,10 @@ async def settings_save(request: Request):
     importance = {k: form.get(f"imp_{k}") for k in config.MACRO_INDICATORS}
     saturation = {k: form.get(f"sat_{k}") for k in config.MACRO_INDICATORS}
     note = str(form.get("note") or "")
+    policy = {"us": form.get("pol_us"), "kr": form.get("pol_kr")}
     try:
         with db.session() as conn:
-            new_id = weights_mod.create_version(conn, importance, saturation, note)
+            new_id = weights_mod.create_version(conn, importance, saturation, note, policy)
     except weights_mod.WeightError as e:
         with db.session() as conn:
             ctx = _settings_ctx(conn)

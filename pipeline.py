@@ -16,6 +16,7 @@ import weights as weights_mod
 from analyzer import llm
 from collectors import macro, news, reports
 from scoring import engine, picks
+from scoring import policy as policy_mod
 
 _lock = threading.Lock()
 
@@ -25,6 +26,7 @@ def _clamp(x, lo, hi):
 
 
 def build_context(macro_rows, news_rows, scored):
+    policy_topics = set(config.POLICY_TOPICS.values())
     return {
         "base_score": scored["score"],
         "coverage": round(scored["coverage"], 2),
@@ -34,7 +36,9 @@ def build_context(macro_rows, news_rows, scored):
                        change_pct=None if r["change_pct"] is None else round(r["change_pct"], 2),
                        freshness=r["freshness"]) for r in macro_rows],
         "news": {n["name"]: [i["title"] for i in n["headlines"]] for n in news_rows
-                 if n["status"] == "ok"},
+                 if n["status"] == "ok" and n["topic"] not in policy_topics},
+        "policy_news": {r: [i["title"] for n in news_rows if n["topic"] == t and n["status"] == "ok"
+                            for i in n["headlines"]] for r, t in config.POLICY_TOPICS.items()},
         "news_unavailable": [n["name"] for n in news_rows if n["status"] != "ok"],
     }
 
@@ -64,26 +68,34 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
                           error="유효한 지표가 없어 분석 생략")
             base = final = None
             adj = 0
+            pol = None
         else:
-            result = llm.analyze(build_context(macro_rows, news_rows, scored), provider)
+            ctx = build_context(macro_rows, news_rows, scored)
+            result = llm.analyze(ctx, provider)
             base = scored["score"]
-            adj = (_clamp(result["analysis"].adjustment, -config.LLM_MAX_ADJUSTMENT,
-                          config.LLM_MAX_ADJUSTMENT) if result["analysis"] else 0)
-            final = round(_clamp(base + adj, 0, 100), 1)
+            caps = wset.get("policy") or {}   # 구 버전(정책 상한 없음)은 정책 반영 0
+            if result["analysis"]:
+                adj = _clamp(result["analysis"].adjustment, -config.LLM_MAX_ADJUSTMENT, config.LLM_MAX_ADJUSTMENT)
+                pol = policy_mod.assess(result["analysis"], ctx["policy_news"], caps)
+            else:
+                adj, pol = 0, policy_mod.empty(caps)
+            final = round(_clamp(base + policy_mod.total(pol) + adj, 0, 100), 1)
 
         a = result["analysis"]
         with db.session() as conn:
             cur = conn.execute(
                 "INSERT INTO analyses (created_at,llm_status,provider,base_score,adjustment,"
                 "final_score,coverage,missing,summary,risk_comment,error,inputs,weight_set_id,"
-                "allocation_set_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "allocation_set_id,policy_us,policy_kr,policy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (datetime.now(timezone.utc).isoformat(timespec="seconds"),
                  result["status"], result["provider"], base, adj, final, scored["coverage"],
                  json.dumps(scored["missing"]),
                  json.dumps(a.summary_3lines, ensure_ascii=False) if a else None,
                  a.risk_comment if a else None, result["error"],
                  json.dumps(build_context(macro_rows, news_rows, scored), ensure_ascii=False),
-                 wset["id"], aset["id"]))
+                 wset["id"], aset["id"],
+                 pol["us"]["points"] if pol else None, pol["kr"]["points"] if pol else None,
+                 json.dumps(pol, ensure_ascii=False) if pol else None))
             analysis_id = cur.lastrowid
         _fill_outcomes_best_effort(closes_fetcher)
         return analysis_id
@@ -107,6 +119,8 @@ def latest_analysis(conn):
     d = dict(row)
     d["missing"] = json.loads(d["missing"]) if d["missing"] else []
     d["summary"] = json.loads(d["summary"]) if d["summary"] else []
+    d["policy"] = json.loads(d["policy"]) if d.get("policy") else None
+    d["policy_total"] = policy_mod.total(d["policy"]) if d["policy"] else 0.0
     ws = weights_mod.get(conn, d.get("weight_set_id")) if d.get("weight_set_id") else None
     d["weight_label"] = ws["label"] if ws else None
     # 비중은 그 분석 당시의 규칙 버전으로 계산한다 (규칙을 나중에 바꿔도 과거 기록은 그대로)

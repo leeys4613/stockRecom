@@ -16,9 +16,14 @@ class WeightError(ValueError):
     pass
 
 
+POLICY_CAP_MAX = 20.0  # 정책 반영 상한(±점) 허용 범위 0~20
+
+
 def _row(r):
+    pol = json.loads(r["policy"]) if r["policy"] else {}
     return dict(id=r["id"], created_at=r["created_at"], label=r["label"],
-                weights=json.loads(r["weights"]), saturation=json.loads(r["saturation"]))
+                weights=json.loads(r["weights"]), saturation=json.loads(r["saturation"]),
+                policy=pol)
 
 
 def get_active(conn):
@@ -66,12 +71,29 @@ def validate(importance, saturation):
     return weights, {k: round(v, 4) for k, v in sat.items()}
 
 
-def create_version(conn, importance, saturation, note=""):
+def validate_policy(policy):
+    """policy: {"us": 상한, "kr": 상한} (±점). 반환: 정규화된 dict. 잘못되면 WeightError."""
+    if not isinstance(policy, dict) or set(policy) != {"us", "kr"}:
+        raise WeightError("정책 반영 상한 입력이 올바르지 않습니다")
+    out = {}
+    for k, label in (("us", "미국 정책"), ("kr", "한국 정책")):
+        v = _number(policy[k], f"{label} 반영 상한")
+        if not 0 <= v <= POLICY_CAP_MAX:
+            raise WeightError(f"{label} 반영 상한은 0~{POLICY_CAP_MAX:g}점 이어야 합니다")
+        out[k] = round(v, 2)
+    return out
+
+
+def create_version(conn, importance, saturation, note="", policy=None):
+    """policy 가 None 이면 현재 적용 중인 세트의 정책 상한을 이어받는다 (없으면 기본값)."""
     weights, sat = validate(importance, saturation)
+    if policy is None:
+        policy = get_active(conn)["policy"] or dict(config.POLICY_CAPS_DEFAULT)
+    policy = validate_policy(policy)
     nxt = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM weight_sets").fetchone()[0]
     label = f"v{nxt}" + (f" {note.strip()[:40]}" if note and note.strip() else "")
     cur = conn.execute(
-        "INSERT INTO weight_sets (created_at,label,weights,saturation) VALUES (?,?,?,?)",
+        "INSERT INTO weight_sets (created_at,label,weights,saturation,policy) VALUES (?,?,?,?,?)",
         (datetime.now(timezone.utc).isoformat(timespec="seconds"), label,
-         json.dumps(weights), json.dumps(sat)))
+         json.dumps(weights), json.dumps(sat), json.dumps(policy)))
     return cur.lastrowid

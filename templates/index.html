@@ -31,9 +31,25 @@
         <div style="font-weight:600;color:{{ g.color }}">매수 가능성 {{ g.label }}</div>
       </div>
       <div class="mut" style="text-align:center">규칙 점수 {{ "{:.1f}".format(analysis.base_score) }}
+        {% if analysis.policy %}· 정책 {{ "{:+.1f}".format(analysis.policy_total) }}{% endif %}
         {% if analysis.llm_status == 'ok' %}· AI 보정 {{ "{:+d}".format(analysis.adjustment) }}{% endif %}
         · 지표 반영률 {{ "{:.0f}".format(analysis.coverage * 100) }}%
         {% if analysis.weight_label %}· 가중치 {{ analysis.weight_label }}{% endif %}</div>
+      {% if analysis.policy %}
+      <details id="policy" style="margin-top:8px">
+        <summary class="mut" style="cursor:pointer;text-align:center">정책 반영 {{ "{:+.1f}".format(analysis.policy_total) }}점
+          · 미국 {{ "{:+.1f}".format(analysis.policy.us.points) }} · 한국 {{ "{:+.1f}".format(analysis.policy.kr.points) }} (근거 보기)</summary>
+        {% for key, label in (('us', '미국 정책·정치'), ('kr', '한국 증시 부양·자본시장 정책')) %}
+        {% set p = analysis.policy[key] %}
+        <div style="margin-top:8px"><b>{{ label }}</b>
+          <span class="mut">— {{ p.level_text }}({{ "{:+d}".format(p.effect) }}) → {{ "{:+.1f}".format(p.points) }}점 (상한 ±{{ "{:g}".format(p.cap) }})</span>
+          {% if p.evidence %}<ul class="lines">{% for e in p.evidence %}<li>{{ e }}</li>{% endfor %}</ul>
+          {% else %}<div class="mut">{{ p.note or ('최근 관련 기사 ' ~ p.n_headlines ~ '건 · 뚜렷한 영향 없음') }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        <div class="mut" style="margin-top:6px">AI는 -3~+3 단계만 판정하고, 점수 환산과 상한은 코드가 처리합니다. 입력 헤드라인에서 근거를 확인하지 못한 판정은 0으로 처리합니다.</div>
+      </details>
+      {% endif %}
       {% if analysis.allocation and analysis.allocbar %}
       {% set ab = analysis.allocbar %}
       <div id="alloc" style="margin-top:16px">

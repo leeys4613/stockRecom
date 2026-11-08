@@ -1,3 +1,4 @@
+import html
 import json
 import sqlite3
 
@@ -20,6 +21,7 @@ def form(imp=None, sat=None, note=""):
     d = {f"imp_{k}": (imp or {}).get(k, 10) for k in KEYS}
     d.update({f"sat_{k}": (sat or {}).get(k, config.SCORE_SATURATION_PCT[k]) for k in KEYS})
     d["note"] = note
+    d.update({"pol_us": 10, "pol_kr": 6})
     return d
 
 
@@ -151,7 +153,7 @@ def test_settings_page_renders_all_indicators():
         r = c.get("/settings")
         assert r.status_code == 200
         for k, (name, _) in config.MACRO_INDICATORS.items():
-            assert f'name="imp_{k}"' in r.text and f'name="sat_{k}"' in r.text and name in r.text
+            assert f'name="imp_{k}"' in r.text and f'name="sat_{k}"' in r.text and html.escape(name) in r.text
         assert "v1 초기안" in r.text and "과적합" in r.text
 
 

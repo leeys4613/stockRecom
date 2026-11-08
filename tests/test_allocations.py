@@ -101,7 +101,9 @@ def test_migration_adds_allocation_set_to_existing_db(tmp_path):
     with db.session(path) as conn:
         assert conn.execute("SELECT allocation_set_id FROM analyses").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM allocation_sets").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM weight_sets").fetchone()[0] == 1  # 기존 가중치 시드 유지
+        # 기존 v1 은 그대로, 정책 도입 전 DB 이므로 새 지표·정책 반영이 포함된 v2 가 추가된다 (멱등: 두 번 init 해도 2개)
+        assert [r[0] for r in conn.execute("SELECT id FROM weight_sets ORDER BY id")] == [1, 2]
+        assert conn.execute("SELECT label FROM weight_sets WHERE id=1").fetchone()[0] == "v1 초기안"
 
 
 def test_past_analysis_keeps_its_own_allocation_rule():

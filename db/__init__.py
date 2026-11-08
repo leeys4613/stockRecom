@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS weight_sets (
     created_at TEXT NOT NULL,
     label TEXT NOT NULL,
     weights TEXT NOT NULL,      -- JSON {key: 부호 있는 정규화 가중치, 절대값 합 1}
-    saturation TEXT NOT NULL    -- JSON {key: 포화 변동률(%)}
+    saturation TEXT NOT NULL,   -- JSON {key: 포화 변동률(%)}
+    policy TEXT                 -- JSON {"us": 상한, "kr": 상한}. NULL = 정책 반영 없음(구 버전)
 );
 
 -- 구간별 주식 비중 규칙: 불변 버전. 가장 큰 id 가 현재 적용 버전. (점수 계산과 무관하므로 가중치와 별도 버전)
@@ -66,7 +67,10 @@ CREATE TABLE IF NOT EXISTS analyses (
     error TEXT,
     inputs TEXT,         -- JSON: LLM에 준 입력 스냅샷 (사후 검증용)
     weight_set_id INTEGER REFERENCES weight_sets(id),
-    allocation_set_id INTEGER REFERENCES allocation_sets(id)
+    allocation_set_id INTEGER REFERENCES allocation_sets(id),
+    policy_us REAL,      -- 미국 정책 반영 점수
+    policy_kr REAL,      -- 한국 증시 부양정책 반영 점수
+    policy TEXT          -- JSON: 단계/근거 헤드라인
 );
 
 -- 종목 마스터: 검색(자동완성)용 코드/이름/시장. 기본 내장 40개 + 사용자가 올린 상장법인 목록
@@ -124,16 +128,32 @@ def _migrate(conn):
     import json
     from datetime import datetime, timezone
 
+    ws_cols = [r["name"] for r in conn.execute("PRAGMA table_info(weight_sets)")]
+    if "policy" not in ws_cols:
+        conn.execute("ALTER TABLE weight_sets ADD COLUMN policy TEXT")
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(analyses)")]
+    for col, typ in (("policy_us", "REAL"), ("policy_kr", "REAL"), ("policy", "TEXT")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE analyses ADD COLUMN {col} {typ}")
     if "weight_set_id" not in cols:
         conn.execute("ALTER TABLE analyses ADD COLUMN weight_set_id INTEGER REFERENCES weight_sets(id)")
     if conn.execute("SELECT COUNT(*) FROM weight_sets").fetchone()[0] == 0:
         conn.execute(
-            "INSERT INTO weight_sets (created_at,label,weights,saturation) VALUES (?,?,?,?)",
+            "INSERT INTO weight_sets (created_at,label,weights,saturation,policy) VALUES (?,?,?,?,?)",
             (datetime.now(timezone.utc).isoformat(timespec="seconds"), "v1 초기안",
-             json.dumps(config.SCORE_WEIGHTS), json.dumps(config.SCORE_SATURATION_PCT)))
+             json.dumps(config.SCORE_WEIGHTS), json.dumps(config.SCORE_SATURATION_PCT),
+             json.dumps(config.POLICY_CAPS_DEFAULT)))
         # 이 시점까지 쌓인 분석은 모두 초기안으로 계산된 것이다
         conn.execute("UPDATE analyses SET weight_set_id=1 WHERE weight_set_id IS NULL")
+    # 정책 반영이 도입되기 전의 DB(어떤 가중치 세트에도 정책 상한이 없음): 새 지표/정책 반영이 포함된 새 버전을 추가한다.
+    # 기존 버전(v1)은 그대로 두므로 과거 분석과 성과 비교가 섞이지 않는다.
+    if conn.execute("SELECT COUNT(*) FROM weight_sets WHERE policy IS NOT NULL").fetchone()[0] == 0:
+        nxt = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM weight_sets").fetchone()[0]
+        conn.execute(
+            "INSERT INTO weight_sets (created_at,label,weights,saturation,policy) VALUES (?,?,?,?,?)",
+            (datetime.now(timezone.utc).isoformat(timespec="seconds"), f"v{nxt} 위험지표·정책 반영",
+             json.dumps(config.SCORE_WEIGHTS), json.dumps(config.SCORE_SATURATION_PCT),
+             json.dumps(config.POLICY_CAPS_DEFAULT)))
     if "allocation_set_id" not in cols:
         conn.execute("ALTER TABLE analyses ADD COLUMN allocation_set_id INTEGER REFERENCES allocation_sets(id)")
     if conn.execute("SELECT COUNT(*) FROM allocation_sets").fetchone()[0] == 0:

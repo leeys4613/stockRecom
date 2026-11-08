@@ -34,7 +34,7 @@ def test_missing_reported_and_renormalized():
     r = compute_score(changes)
     assert r["score"] == 100  # 유효 지표 1개로 재정규화
     assert "SOX" not in r["missing"] and len(r["missing"]) == len(config.SCORE_WEIGHTS) - 1
-    assert r["coverage"] == pytest.approx(0.30)
+    assert r["coverage"] == pytest.approx(abs(config.SCORE_WEIGHTS["SOX"]))
 
 
 def test_all_missing():

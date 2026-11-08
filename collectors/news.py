@@ -2,7 +2,8 @@
 
 헤드라인은 외부의 신뢰할 수 없는 텍스트다: 길이를 제한하고 링크는 http(s)만 허용한다.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
 import config
@@ -24,34 +25,56 @@ def http_fetch(url):
     return r.content
 
 
-def parse_items(content, limit):
+def _published_dt(entry):
+    raw = entry.get("published")
+    try:
+        d = parsedate_to_datetime(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+    if d is not None and d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return d
+
+
+def parse_items(content, limit, max_age_days=None, now=None):
+    """RSS -> 헤드라인. max_age_days 가 있으면 발행일이 그 기간 안인 기사만(발행일 없는 기사는 제외), 최신순.
+
+    피드 자체가 비었으면 실패(예외), 기간 필터로 모두 걸러지면 빈 목록(정상: 최근 기사 없음).
+    """
     import feedparser
 
     feed = feedparser.parse(content)
     if feed.bozo and not feed.entries:
         raise ValueError(f"RSS 파싱 실패: {feed.bozo_exception}")
+    if not feed.entries:
+        raise ValueError("헤드라인 없음")
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=max_age_days) if max_age_days else None
     items = []
-    for e in feed.entries[:limit]:
+    for e in feed.entries:
         title = " ".join((e.get("title") or "").split())[:MAX_TITLE]
         if not title:
+            continue
+        dt = _published_dt(e)
+        if cutoff is not None and (dt is None or dt < cutoff or dt > now + timedelta(hours=6)):
             continue
         link = e.get("link") or ""
         if not link.startswith(("http://", "https://")):
             link = ""
         source = e.get("source", {}).get("title") if isinstance(e.get("source"), dict) else None
-        items.append(dict(title=title, link=link, source=source,
-                          published=e.get("published")))
-    if not items:
-        raise ValueError("헤드라인 없음")
-    return items
+        items.append((dt or now, dict(title=title, link=link, source=source, published=e.get("published"))))
+    items.sort(key=lambda t: t[0], reverse=True)
+    return [i for _, i in items[:limit]]
 
 
 def collect_one(topic, fetcher=http_fetch):
     _, query = config.NEWS_TOPICS[topic]
+    max_age = config.NEWS_MAX_AGE_DAYS.get(topic, config.NEWS_DEFAULT_MAX_AGE_DAYS)
+    limit = config.NEWS_PER_TOPIC_OVERRIDE.get(topic, config.NEWS_PER_TOPIC)
     fetched_at = now_iso()
     try:
-        content = fetcher(RSS_URL.format(q=quote(query)))
-        items = parse_items(content, config.NEWS_PER_TOPIC)
+        content = fetcher(RSS_URL.format(q=quote(f"{query} when:{max_age}d")))
+        items = parse_items(content, limit, max_age)
         return dict(topic=topic, status="ok", error=None, fetched_at=fetched_at, items=items)
     except Exception as e:
         return dict(topic=topic, status="failed", error=f"{type(e).__name__}: {e}"[:300],
