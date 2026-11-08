@@ -11,7 +11,7 @@ import weights as W
 from collectors import macro
 from tests.conftest import GOOD, FakeProvider, fake_rss, flat_closes, macro_ok
 
-NEW_KEYS = {"KOSPI10D", "KOSPIDD", "VIXAVG"}
+NEW_KEYS = {"KOSPI10D", "KOSPIDD", "VIXAVG", "AI1D", "AI10D", "AIDD", "MEM10D"}   # 위험·추세·AI·메모리 파생 지표
 
 
 # ---------- 계산식 ----------
@@ -73,7 +73,7 @@ def test_collect_all_includes_derived_and_base_failure_does_not_block_them():
         raise RuntimeError("down")
     rows = macro.collect_all(base_fail, hist([100] * 12, [20] * 12))
     by = {r["key"]: r for r in rows}
-    assert len(rows) == len(config.MACRO_INDICATORS) == 13
+    assert len(rows) == len(config.MACRO_INDICATORS) == 17
     assert by["SOX"]["status"] == "failed" and by["KOSPI10D"]["status"] == "ok"
 
 
@@ -158,14 +158,15 @@ def test_migration_adds_version_keeping_relative_weights_and_policy():
         ws = W.list_all(conn)
         assert [w["id"] for w in ws] == [2, 1] and ws[1]["label"] == "v2 조정본"
         new, old = ws[0], ws[1]
-        assert "추세지표" in new["label"] and set(new["weights"]) == set(config.SCORE_WEIGHTS)
+        assert "지표 확장" in new["label"] and set(new["weights"]) == set(config.SCORE_WEIGHTS)
         share = sum(abs(config.SCORE_WEIGHTS[k]) for k in NEW_KEYS)                       # 0.25
         for k in OLD10:                                                                   # 기존 상대 비중 유지(균일 축소)
             assert new["weights"][k] == pytest.approx(OLD10[k] * (1 - share), abs=1e-5)
         for k in NEW_KEYS:
             assert new["weights"][k] == config.SCORE_WEIGHTS[k]
         assert sum(abs(w) for w in new["weights"].values()) == pytest.approx(1.0, abs=1e-4)
-        assert new["policy"] == {"us": 4.0, "kr": 2.0}                                    # 정책 상한 이어받음
+        assert new["policy"] == {"us": 4.0, "kr": 2.0, "ai": config.POLICY_CAPS_DEFAULT["ai"],
+                                 "mem": config.POLICY_CAPS_DEFAULT["mem"]}              # 정책 상한 이어받고 새 영역은 기본값
         assert new["saturation"]["SOX"] == 2.0 and new["saturation"]["VIXAVG"] == config.SCORE_SATURATION_PCT["VIXAVG"]
         assert old["weights"] == OLD10                                                    # 이전 버전 불변
         assert conn.execute("SELECT weight_set_id FROM analyses").fetchone()[0] == 1      # 과거 분석은 이전 버전

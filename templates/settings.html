@@ -24,9 +24,13 @@
     </tbody>
   </table>
   <h3 style="font-size:15px;margin:16px 0 4px">정책 반영 상한 (±점)</h3>
-  <p class="mut" style="margin:0 0 6px">AI가 뉴스에서 판정한 미국 정책·한국 증시 부양정책 영향(-3~+3 단계)을 점수로 환산할 때의 최대 폭입니다. 0이면 반영하지 않습니다.</p>
-  <label>미국 정책 <input type="number" name="pol_us" value="{{ '%g' % policy.us }}" min="0" max="20" step="0.5" required style="width:64px"></label>
-  <label style="margin-left:12px">한국 정책 <input type="number" name="pol_kr" value="{{ '%g' % policy.kr }}" min="0" max="20" step="0.5" required style="width:64px"></label>
+  <p class="mut" style="margin:0 0 6px">AI가 뉴스에서 판정한 미국 정책, 한국 증시 부양정책, AI 시장 반응, 메모리 가격 방향(-3~+3 단계)을 점수로 환산할 때의 영역별 최대 폭입니다. 0이면 반영하지 않습니다.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:8px 16px">
+    <label>미국 정책 <input type="number" name="pol_us" value="{{ '%g' % policy.us }}" min="0" max="20" step="0.5" required style="width:64px"></label>
+    <label>한국 정책 <input type="number" name="pol_kr" value="{{ '%g' % policy.kr }}" min="0" max="20" step="0.5" required style="width:64px"></label>
+    <label>AI 시장 반응 <input type="number" name="pol_ai" value="{{ '%g' % policy.ai }}" min="0" max="20" step="0.5" required style="width:64px"></label>
+    <label>메모리 가격 <input type="number" name="pol_mem" value="{{ '%g' % policy.mem }}" min="0" max="20" step="0.5" required style="width:64px"></label>
+  </div>
   <p><input type="text" name="note" maxlength="40" placeholder="메모 (예: 환율 비중 상향 실험)" style="width:100%;box-sizing:border-box;padding:8px"></p>
   <button type="submit">새 버전으로 저장</button>
   <span class="mut">현재 적용 중: {{ current.label }}</span>
@@ -38,7 +42,7 @@
   {% for h in history %}
   <tr><td>{{ h.label }}</td><td>{{ h.created_at | kst }}</td>
     <td style="text-align:left" class="mut">{% for k, w in h.weights.items() %}{{ indicators[k][0] if k in indicators else k }} {{ "{:+.0f}".format(w * 100) }}{% if not loop.last %} · {% endif %}{% endfor %}
-      <br>{% if h.policy %}정책 반영 상한: 미국 ±{{ "{:g}".format(h.policy.us) }} · 한국 ±{{ "{:g}".format(h.policy.kr) }}{% else %}정책 반영 없음{% endif %}</td></tr>
+      <br>{% if h.policy %}정책 반영 상한: 미국 ±{{ "{:g}".format(h.policy.us) }} · 한국 ±{{ "{:g}".format(h.policy.kr) }}{% if h.policy.ai is defined %} · AI ±{{ "{:g}".format(h.policy.ai) }} · 메모리 ±{{ "{:g}".format(h.policy.mem) }}{% endif %}{% else %}정책 반영 없음{% endif %}</td></tr>
   {% endfor %}
 </table>
 

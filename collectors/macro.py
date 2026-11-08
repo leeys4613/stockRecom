@@ -33,7 +33,7 @@ def collect_one(key, fetcher=yf_fetch):
                     fetched_at=fetched_at)
 
 
-def yf_closes(symbol, period="2mo"):
+def yf_closes(symbol, period="4mo"):
     """최근 일별 종가 목록(오름차순). 추세 지표용."""
     import yfinance as yf
 
@@ -63,7 +63,29 @@ def _derived_row(key, value, fetched_at, error=None):
                 change_pct=None, error=error, fetched_at=fetched_at)
 
 
-def derive(history_fetcher=None):
+def derive_ai(ai_snaps):
+    """AI 대형주 바스켓(1일·10일·60일 고점 대비)과 메모리 프록시(10일) 지표. 종목별 스냅샷에서 계산한다."""
+    fetched_at = now_iso()
+    ok = {r["ticker"]: r for r in ai_snaps if r["status"] == "ok"}
+    out = []
+    members = [t for t, (_, g) in config.AI_TICKERS.items() if g in config.AI_BASKET_GROUPS]
+    got = [ok[t] for t in members if t in ok]
+    if len(got) >= config.AI_MIN_TICKERS:
+        for key, field in (("AI1D", "chg1d"), ("AI10D", "chg10d"), ("AIDD", "dd60")):
+            out.append(_derived_row(key, sum(r[field] for r in got) / len(got), fetched_at))
+    else:
+        err = f"AI 바스켓 종목 {len(got)}/{len(members)}개만 수집 (최소 {config.AI_MIN_TICKERS}개 필요)"
+        out += [_derived_row(k, None, fetched_at, err) for k in ("AI1D", "AI10D", "AIDD")]
+    mem = [ok[t] for t in config.MEMORY_PROXY if t in ok]
+    if len(mem) >= config.MEM_MIN_TICKERS:
+        out.append(_derived_row("MEM10D", sum(r["chg10d"] for r in mem) / len(mem), fetched_at))
+    else:
+        out.append(_derived_row("MEM10D", None, fetched_at,
+                                f"메모리 프록시 {len(mem)}/{len(config.MEMORY_PROXY)}개만 수집 (최소 {config.MEM_MIN_TICKERS}개 필요)"))
+    return out
+
+
+def derive(history_fetcher=None, ai_snaps=None):
     """파생 추세 지표: KOSPI 10거래일 변화/고점 대비, VIX 10일 평균. 실패는 지표별로 기록한다."""
     fetch = history_fetcher or yf_closes
     fetched_at = now_iso()
@@ -78,12 +100,16 @@ def derive(history_fetcher=None):
         out.append(_derived_row("VIXAVG", vix_average(fetch(config.MACRO_INDICATORS["VIX"][1])), fetched_at))
     except Exception as e:
         out.append(_derived_row("VIXAVG", None, fetched_at, f"{type(e).__name__}: {e}"[:300]))
-    return out
+    if ai_snaps is None:
+        from collectors import ai_tracker
+
+        ai_snaps = ai_tracker.collect(history_fetcher)
+    return out + derive_ai(ai_snaps)
 
 
-def collect_all(fetcher=yf_fetch, history_fetcher=None):
+def collect_all(fetcher=yf_fetch, history_fetcher=None, ai_snaps=None):
     rows = [collect_one(k, fetcher) for k, (_, sym) in config.MACRO_INDICATORS.items() if sym is not None]
-    return rows + derive(history_fetcher)
+    return rows + derive(history_fetcher, ai_snaps)
 
 
 def save(conn, rows):

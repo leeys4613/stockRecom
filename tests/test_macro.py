@@ -33,7 +33,7 @@ def test_dashboard_with_partial_failure(monkeypatch):
         assert r.status_code == 200
         assert "수집 실패" in r.text and "boom" in r.text
         assert "최신" in r.text and "WTI" in r.text
-        assert "매수 가능성 점수" in r.text and "AI 3줄 요약" in r.text
+        assert "매수 가능성 점수" in r.text and "AI 요약" in r.text
         assert "연준 금리 동결" in r.text and 'href="https://example.com/a"' in r.text
         assert "javascript:" not in r.text
         assert "SOX" in r.text and "점수에서 제외" in r.text

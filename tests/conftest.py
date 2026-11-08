@@ -2,7 +2,7 @@ import pytest
 
 import config
 import performance
-from collectors import macro, reports
+from collectors import ai_tracker, macro, reports
 
 
 @pytest.fixture(autouse=True)
@@ -20,6 +20,10 @@ def isolated(tmp_path, monkeypatch):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(reports, "yf_fetch", no_symbol_network)
     monkeypatch.setattr(config, "REPORTS_DELAY_SEC", 0)
+
+    def no_capex(ticker):
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(ai_tracker, "yf_capex", no_capex)
     monkeypatch.setattr(macro, "yf_closes", lambda symbol, period="2mo": flat_closes(start=20.0 if symbol == "^VIX" else 5000.0))
 
 
@@ -60,7 +64,7 @@ class FakeProvider:
         return self.payload
 
 
-GOOD = {"summary_3lines": ["a", "b", "c"], "adjustment": 4, "risk_comment": "리스크"}
+GOOD = {"summary_lines": ["a", "b", "c", "d"], "adjustment": 4, "risk_comment": "리스크"}
 
 
 def consensus(price=100.0, target=130.0, rec=1.8, n=12, **over):

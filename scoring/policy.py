@@ -5,8 +5,12 @@ AI 에게 점수를 직접 쓰게 하지 않는다(단계만 판정). 환산은 
 """
 import config
 
-REGIONS = ("us", "kr")
-REGION_NAME = {"us": "미국 정책·정치", "kr": "한국 증시 부양·자본시장 정책"}
+REGIONS = ("us", "kr", "ai", "mem")
+REGION_NAME = {"us": "미국 정책·정치", "kr": "한국 증시 부양·자본시장 정책",
+               "ai": "AI 투자 사이클(데이터센터 건설 속도) 시장 반응", "mem": "메모리 가격(DRAM·HBM·NAND) 방향"}
+# 영역별 AI 출력 필드 (미국/한국은 기존 이름 유지)
+FIELDS = {"us": ("us_policy_effect", "us_policy_evidence"), "kr": ("kr_policy_effect", "kr_policy_evidence"),
+          "ai": ("ai_market_effect", "ai_market_evidence"), "mem": ("mem_price_effect", "mem_price_evidence")}
 LEVEL_TEXT = {-3: "매우 부정", -2: "부정", -1: "약한 부정", 0: "영향 없음", 1: "약한 긍정", 2: "긍정", 3: "매우 긍정"}
 MIN_EVIDENCE_CHARS = 10  # 이보다 짧은 근거 문자열은 우연히 일치할 수 있어 인정하지 않음
 
@@ -35,9 +39,10 @@ def assess(analysis, headlines, caps):
     out = {}
     for r in REGIONS:
         titles = headlines.get(r) or []
-        effect = int(getattr(analysis, f"{r}_policy_effect", 0) or 0)
+        f_eff, f_ev = FIELDS[r]
+        effect = int(getattr(analysis, f_eff, 0) or 0)
         effect = max(-config.POLICY_LEVEL_MAX, min(config.POLICY_LEVEL_MAX, effect))
-        evidence = supported_evidence(getattr(analysis, f"{r}_policy_evidence", []), titles)
+        evidence = supported_evidence(getattr(analysis, f_ev, []), titles)
         note = None
         if effect != 0 and not titles:
             effect, note = 0, "최근 관련 기사가 없어 0 처리"

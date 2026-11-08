@@ -13,8 +13,8 @@ def test_valid_output_ok():
 @pytest.mark.parametrize("bad", [
     {**GOOD, "adjustment": 11},
     {**GOOD, "adjustment": -11},
-    {**GOOD, "summary_3lines": ["a", "b"]},
-    {"summary_3lines": ["a", "b", "c"]},
+    {**GOOD, "summary_lines": ["a", "b"]},
+    {"summary_lines": ["a", "b", "c", "d"]},
 ])
 def test_invalid_output_rejected_and_retried(bad):
     p = FakeProvider(bad)

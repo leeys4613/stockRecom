@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import config
 
-SAT_MIN, SAT_MAX = 0.1, 20.0  # 포화 변동률(%) 허용 범위
+SAT_MIN, SAT_MAX = 0.1, 50.0  # 포화 변동률(%) 허용 범위 (AI 바스켓 낙폭 기본값 30%를 담을 수 있어야 한다)
 
 
 class WeightError(ValueError):
@@ -71,13 +71,19 @@ def validate(importance, saturation):
     return weights, {k: round(v, 4) for k, v in sat.items()}
 
 
+POLICY_LABELS = {"us": "미국 정책", "kr": "한국 정책", "ai": "AI 시장 반응", "mem": "메모리 가격"}
+
+
 def validate_policy(policy):
-    """policy: {"us": 상한, "kr": 상한} (±점). 반환: 정규화된 dict. 잘못되면 WeightError."""
-    if not isinstance(policy, dict) or set(policy) != {"us", "kr"}:
+    """policy: {"us","kr"[,"ai","mem"]: 상한(±점)}. ai/mem 은 입력이 없으면 기본값. 반환: 정규화된 dict."""
+    if not isinstance(policy, dict) or not {"us", "kr"} <= set(policy) or set(policy) - set(POLICY_LABELS):
         raise WeightError("정책 반영 상한 입력이 올바르지 않습니다")
     out = {}
-    for k, label in (("us", "미국 정책"), ("kr", "한국 정책")):
-        v = _number(policy[k], f"{label} 반영 상한")
+    for k, label in POLICY_LABELS.items():
+        raw = policy.get(k)
+        if raw in (None, "") and k in ("ai", "mem"):
+            raw = config.POLICY_CAPS_DEFAULT[k]
+        v = _number(raw, f"{label} 반영 상한")
         if not 0 <= v <= POLICY_CAP_MAX:
             raise WeightError(f"{label} 반영 상한은 0~{POLICY_CAP_MAX:g}점 이어야 합니다")
         out[k] = round(v, 2)

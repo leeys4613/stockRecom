@@ -55,7 +55,7 @@ def test_validate_relative_importance():
     lambda i, s: i.update({k: 0 for k in KEYS}),     # 전부 0
     lambda i, s: s.update(SOX=0),                    # 포화 0 (0 나눗셈 방지)
     lambda i, s: s.update(SOX=0.01),
-    lambda i, s: s.update(SOX=21),
+    lambda i, s: s.update(SOX=51),
     lambda i, s: i.update(EXTRA=1),                  # 알 수 없는 지표
 ])
 def test_validate_rejects_bad_input(mutate):

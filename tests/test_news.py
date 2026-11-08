@@ -75,4 +75,4 @@ def test_query_has_when_operator_and_policy_topics_exist():
     news.collect_one("kr_policy", lambda u: seen.append(u) or make_rss())
     news.collect_one("us_macro", lambda u: seen.append(u) or make_rss())
     assert "when%3A7d" in seen[0] and "when%3A3d" in seen[1]
-    assert set(config.POLICY_TOPICS.values()) <= set(config.NEWS_TOPICS)
+    assert {t for ts in config.POLICY_TOPICS.values() for t in ts} <= set(config.NEWS_TOPICS)

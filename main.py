@@ -77,6 +77,7 @@ def index(request: Request):
         top, _, picks_at = pipeline.top_picks_view(conn)
         ctx = dict(active="dash", rows=macro.latest(conn), news=news.latest(conn),
                    analysis=pipeline.latest_analysis(conn), picks=top, picks_at=picks_at,
+                   tracker=pipeline.tracker_view(conn), group_names=config.AI_GROUP_NAMES,
                    watch_count=len(reports.watchlist(conn)))
     return templates.TemplateResponse(request, "index.html", ctx)
 
@@ -108,7 +109,7 @@ def _settings_ctx(conn, **extra):
                  share=abs(active["weights"].get(k, 0.0)) * 100,
                  sat=active["saturation"].get(k, config.SCORE_SATURATION_PCT[k]))
             for k, (name, _) in config.MACRO_INDICATORS.items()]
-    policy = active["policy"] or dict(config.POLICY_CAPS_DEFAULT)
+    policy = {**config.POLICY_CAPS_DEFAULT, **(active["policy"] or {})}   # 상한이 없던 영역(ai, mem)은 기본값 표시
     a_active = allocations.get_active(conn)
     return dict(active="settings", rows=rows, current=active, history=weights_mod.list_all(conn),
                 indicators=config.MACRO_INDICATORS, sat_min=weights_mod.SAT_MIN,
@@ -131,7 +132,7 @@ async def settings_save(request: Request):
     importance = {k: form.get(f"imp_{k}") for k in config.MACRO_INDICATORS}
     saturation = {k: form.get(f"sat_{k}") for k in config.MACRO_INDICATORS}
     note = str(form.get("note") or "")
-    policy = {"us": form.get("pol_us"), "kr": form.get("pol_kr")}
+    policy = {"us": form.get("pol_us"), "kr": form.get("pol_kr"), "ai": form.get("pol_ai"), "mem": form.get("pol_mem")}
     try:
         with db.session() as conn:
             new_id = weights_mod.create_version(conn, importance, saturation, note, policy)

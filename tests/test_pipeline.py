@@ -24,7 +24,7 @@ def test_score_plus_adjustment_saved_with_inputs():
     assert a["llm_status"] == "ok" and a["provider"] == "fake"
     assert a["adjustment"] == 4
     assert a["final_score"] == min(100, round(a["base_score"] + 4, 1))
-    assert a["summary"] == ["a", "b", "c"] and a["allocation"] is not None
+    assert a["summary"] == ["a", "b", "c", "d"] and a["allocation"] is not None
     with db.session() as conn:
         assert "macro" in conn.execute("SELECT inputs FROM analyses").fetchone()[0]
 

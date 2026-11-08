@@ -27,8 +27,14 @@ MACRO_INDICATORS = {
     "KOSPI10D": ("KOSPI 10거래일 변화", None),
     "KOSPIDD": ("KOSPI 10일 고점 대비", None),
     "VIXAVG": ("VIX 10일 평균 (20=중립)", None),
+    # AI 투자 사이클(데이터센터 건설 속도) 시장 반응: AI 대형주 8종목(빅테크·반도체·데이터센터) 평균
+    "AI1D": ("AI 대형주 1일 변화", None),
+    "AI10D": ("AI 대형주 10거래일 변화", None),
+    "AIDD": ("AI 대형주 60일 고점 대비", None),
+    # 메모리 가격 기대의 시장 프록시: 메모리주(Micron·SK하이닉스·Nanya·Winbond·SanDisk·Kioxia·메모리 ETF) 평균
+    "MEM10D": ("메모리주 10거래일 변화", None),
 }
-DERIVED_UNITS = {"KOSPI10D": "%", "KOSPIDD": "%", "VIXAVG": ""}
+DERIVED_UNITS = {"KOSPI10D": "%", "KOSPIDD": "%", "VIXAVG": "", "AI1D": "%", "AI10D": "%", "AIDD": "%", "MEM10D": "%"}
 SCORE_CENTER = {"VIXAVG": 20.0}      # 점수 입력 = 값 - 중립값 (VIX 10일 평균이 20 이면 0점)
 KOSPI_SYMBOL = "^KS11"
 TREND_DAYS = 10   # 추세 지표의 관측 기간(거래일): KOSPI 변화·고점 대비·VIX 평균
@@ -39,19 +45,24 @@ STALE_AFTER_HOURS = 6
 # --- 점수 엔진 초기안 (⚠ 사람 확인 필요) ---
 # 가중치: 양수 = 지표가 오르면 점수↑, 음수 = 오르면 점수↓. 절대값 합 = 1.0
 SCORE_WEIGHTS = {
-    "SOX": 0.165,
-    "USDKRW": -0.15,
-    "US10Y": -0.09,
-    "USDJPY": 0.03,
-    "USDCNH": -0.06,
-    "BTC": 0.03,
-    "WTI": -0.06,
-    "VIX": -0.075,     # VIX 전일 변화율
-    "SPX": 0.06,
-    "DXY": -0.03,
-    "VIXAVG": -0.10,   # VIX 10일 평균 수준: 높을수록 위험 국면
-    "KOSPI10D": 0.08,  # KOSPI 최근 10거래일 변화
-    "KOSPIDD": 0.07,   # KOSPI 10일 고점 대비 낙폭
+    "SOX": 0.1155,
+    "USDKRW": -0.105,
+    "US10Y": -0.063,
+    "USDJPY": 0.021,
+    "USDCNH": -0.042,
+    "BTC": 0.021,
+    "WTI": -0.042,
+    "VIX": -0.0525,      # VIX 전일 변화율
+    "SPX": 0.042,
+    "DXY": -0.021,
+    "VIXAVG": -0.07,     # VIX 10일 평균 수준: 높을수록 위험 국면
+    "KOSPI10D": 0.056,   # KOSPI 최근 10거래일 변화
+    "KOSPIDD": 0.049,    # KOSPI 10일 고점 대비 낙폭
+    # AI 투자 사이클(데이터센터 건설 속도·메모리 가격)이 최근 주가를 크게 좌우한다는 판단으로 비중 30% (사용자 요청)
+    "AI1D": 0.06,        # AI 대형주 바스켓 1일 평균 변화
+    "AI10D": 0.08,       # AI 대형주 바스켓 10거래일 평균 변화
+    "AIDD": 0.09,        # AI 대형주 바스켓 60일 고점 대비 평균 낙폭
+    "MEM10D": 0.07,      # 메모리주 10거래일 평균 변화 (메모리 가격 기대 프록시)
 }
 # 지표 방향(고정): +1 = 지표가 오르면 점수↑, -1 = 오르면 점수↓. 사용자 조정은 크기만 허용한다
 SCORE_DIRECTION = {k: (1 if w >= 0 else -1) for k, w in SCORE_WEIGHTS.items()}
@@ -70,6 +81,10 @@ SCORE_SATURATION_PCT = {
     "VIXAVG": 10.0,   # 중립(20) 대비 ±10pt 이면 포화
     "KOSPI10D": 8.0,   # 10거래일 ±8%
     "KOSPIDD": 10.0,   # 10일 고점 대비 -10%
+    "AI1D": 3.0,       # 바스켓 평균 하루 ±3%
+    "AI10D": 8.0,      # 10거래일 ±8%
+    "AIDD": 30.0,      # 60일 고점 대비 -30%
+    "MEM10D": 12.0,    # 메모리주는 변동이 커서 10거래일 ±12% 에서 포화
 }
 # 점수 구간 -> 주식 비중 범위(%). (하한점수, 라벨, 주식 최소, 주식 최대) 내림차순 검사
 # 라벨은 화면에서 "매수 가능성 <라벨>"로 표시된다 (확률이 아니라 점수 구간)
@@ -92,14 +107,22 @@ NEWS_TOPICS = {
     # 정책 반영용(AI 가 -3~+3 단계로만 판정, 점수 반영폭은 상한이 있음)
     "us_policy": ("미국 정책·정치", "트럼프 OR 백악관 OR 관세 OR 무역협상 OR 반도체 수출규제 OR 대중 제재 OR 연준 인사 OR 셧다운 OR 중간선거"),
     "kr_policy": ("한국 증시 부양·자본시장 정책", "증시 부양 OR 밸류업 OR 상법 개정 OR 배당소득 분리과세 OR 공매도 OR 자본시장 활성화"),
+    # AI 투자 사이클(데이터센터 건설 속도): 영문 기사. AI 가 -3~+3 단계로 판정
+    "ai_capex": ("AI 설비투자·데이터센터 (영문)", '"AI bubble" OR "data center" OR datacenter OR "AI capex" OR hyperscaler OR "AI spending"'),
+    "ai_stocks": ("AI 인프라 종목 (영문)", "CoreWeave OR IREN OR Micron OR TSMC OR Nvidia OR \"SK hynix\" AI stock"),
+    # 메모리 가격(DRAM·HBM·NAND) 방향: 헤드라인에 가격·매출 수치가 실린다. 가격 상승=긍정, 하락·공급과잉=부정
+    "mem_kr": ("메모리 가격 (한국어)", "D램 가격 OR 고정거래가격 OR HBM 가격 OR 낸드 가격 OR 메모리 가격"),
+    "mem_en": ("메모리 가격 (영문)", "DRAM prices OR \"DRAM contract price\" OR HBM prices OR NAND prices OR TrendForce memory"),
 }
+NEWS_LOCALE = {"ai_capex": "hl=en-US&gl=US&ceid=US:en", "ai_stocks": "hl=en-US&gl=US&ceid=US:en",
+               "mem_en": "hl=en-US&gl=US&ceid=US:en"}
 # 구글 뉴스 RSS 는 최신순이 아니라 관련도순이라 오래된 기사가 섞인다 → 기간 제한(검색어 + 발행일 필터)
 NEWS_DEFAULT_MAX_AGE_DAYS = 3
-NEWS_MAX_AGE_DAYS = {"us_policy": 3, "kr_policy": 7}
-NEWS_PER_TOPIC_OVERRIDE = {"us_policy": 8, "kr_policy": 8}
-POLICY_TOPICS = {"us": "us_policy", "kr": "kr_policy"}
+NEWS_MAX_AGE_DAYS = {"us_policy": 3, "kr_policy": 7, "ai_capex": 3, "ai_stocks": 3, "mem_kr": 5, "mem_en": 5}
+NEWS_PER_TOPIC_OVERRIDE = {"us_policy": 8, "kr_policy": 8, "ai_capex": 8, "ai_stocks": 8, "mem_kr": 8, "mem_en": 8}
+POLICY_TOPICS = {"us": ["us_policy"], "kr": ["kr_policy"], "ai": ["ai_capex", "ai_stocks"], "mem": ["mem_kr", "mem_en"]}
 POLICY_LEVEL_MAX = 3                      # AI 판정 단계: -3(매우 부정) ~ +3(매우 긍정)
-POLICY_CAPS_DEFAULT = {"us": 10.0, "kr": 6.0}  # 정책 반영 점수 상한(±점). 단계/3 * 상한
+POLICY_CAPS_DEFAULT = {"us": 10.0, "kr": 6.0, "ai": 6.0, "mem": 6.0}  # 정책 반영 점수 상한(±점). 단계/3 * 상한
 NEWS_PER_TOPIC = 5
 NEWS_TIMEOUT_SEC = 15
 
@@ -134,3 +157,25 @@ PICK_TREND_MIN_DAYS = 5          # 목표가 추이는 이 일수 이상 지난 
 PICK_UPSIDE_SAT = 0.5            # 괴리율 +50% 에서 포화
 PICK_TREND_SAT = 0.10            # 목표가 변화 +10% 에서 포화
 PICK_WEIGHTS = {"upside": 0.40, "opinion": 0.35, "trend": 0.25}
+
+
+# --- AI 투자 사이클 트래커 (데이터센터 건설 속도에 대한 시장 반응) ---
+# 티커 -> (이름, 종목군). 수요=빅테크(설비투자 주체), 공급망=반도체, 인프라=데이터센터/AI 클라우드
+AI_TICKERS = {
+    "AMZN": ("Amazon", "bigtech"), "META": ("Meta", "bigtech"), "GOOGL": ("Alphabet", "bigtech"),
+    "MSFT": ("Microsoft", "bigtech"),
+    "MU": ("Micron", "semis"), "TSM": ("TSMC", "semis"), "000660.KS": ("SK하이닉스", "semis"),
+    "IREN": ("IREN", "datacenter"), "CRWV": ("CoreWeave", "datacenter"),
+    # 메모리 가격에 민감한 프록시(바스켓에는 넣지 않고 메모리 지표/트래커에만 사용)
+    "2408.TW": ("Nanya(DRAM)", "memory"), "2344.TW": ("Winbond", "memory"),
+    "SNDK": ("SanDisk(NAND)", "memory"), "285A.T": ("Kioxia(NAND)", "memory"), "DRAM": ("메모리 ETF", "memory"),
+}
+AI_BASKET_GROUPS = ("bigtech", "semis", "datacenter")
+MEMORY_PROXY = ["MU", "000660.KS", "2408.TW", "2344.TW", "SNDK", "285A.T", "DRAM"]
+AI_GROUP_NAMES = {"bigtech": "빅테크(수요)", "semis": "반도체(공급망)", "datacenter": "데이터센터(인프라)", "memory": "메모리 프록시"}
+AI_DD_WINDOW = 60                  # 고점 대비 낙폭 관측 기간(거래일)
+AI_MIN_TICKERS = 6                 # 바스켓 지표는 최소 이 종목 수가 성공해야 계산 (메모리 프록시는 MEM_MIN_TICKERS)
+MEM_MIN_TICKERS = 4
+CAPEX_TICKERS = ["MSFT", "AMZN", "GOOGL", "META"]
+CAPEX_REFRESH_HOURS = 20
+CAPEX_ANOMALY_QOQ = 1.8            # 직전 분기 대비 이 배수 이상이면 데이터 이상 의심 표시

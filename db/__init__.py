@@ -73,6 +73,27 @@ CREATE TABLE IF NOT EXISTS analyses (
     policy TEXT          -- JSON: 단계/근거 헤드라인
 );
 
+-- AI 투자 사이클 트래커: 빅테크/반도체/데이터센터/메모리 프록시 종목의 가격 스냅샷
+CREATE TABLE IF NOT EXISTS ai_tracker_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    grp TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ok','failed')),
+    error TEXT,
+    fetched_at TEXT NOT NULL,
+    price REAL, chg1d REAL, chg10d REAL, dd60 REAL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_ticker_time ON ai_tracker_snapshots(ticker, fetched_at);
+
+-- 빅테크 분기 설비투자(CAPEX, 양수 USD). 데이터센터 건설 속도의 수요 측 지표
+CREATE TABLE IF NOT EXISTS capex_quarters (
+    ticker TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    capex REAL NOT NULL,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (ticker, period_end)
+);
+
 -- 종목 마스터: 검색(자동완성)용 코드/이름/시장. 기본 내장 40개 + 사용자가 올린 상장법인 목록
 CREATE TABLE IF NOT EXISTS stock_master (
     code TEXT PRIMARY KEY,
@@ -163,12 +184,20 @@ def _migrate(conn):
         new_share = sum(abs(config.SCORE_WEIGHTS[k]) for k in missing_keys)
         merged = {k: round(w * (1 - new_share), 6) for k, w in lw.items() if k in config.SCORE_WEIGHTS}
         merged.update({k: config.SCORE_WEIGHTS[k] for k in missing_keys})
+        # 정책 상한: 이어받되, 새로 생긴 반응 영역(ai, mem 등)은 기본 상한을 채운다 (정책 반영이 없던 구 DB 는 NULL 유지)
+        if latest["policy"]:
+            pol = json.loads(latest["policy"])
+            for k, v in config.POLICY_CAPS_DEFAULT.items():
+                pol.setdefault(k, v)
+            merged_policy = json.dumps(pol)
+        else:
+            merged_policy = None
         sat = {**config.SCORE_SATURATION_PCT, **{k: v for k, v in lsat.items() if k in config.SCORE_WEIGHTS}}
         nxt = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM weight_sets").fetchone()[0]
         conn.execute(
             "INSERT INTO weight_sets (created_at,label,weights,saturation,policy) VALUES (?,?,?,?,?)",
-            (datetime.now(timezone.utc).isoformat(timespec="seconds"), f"v{nxt} 추세지표(KOSPI·VIX 10일) 반영",
-             json.dumps(merged), json.dumps(sat), latest["policy"]))
+            (datetime.now(timezone.utc).isoformat(timespec="seconds"), f"v{nxt} 지표 확장 (+{len(missing_keys)})",
+             json.dumps(merged), json.dumps(sat), merged_policy))
     if "allocation_set_id" not in cols:
         conn.execute("ALTER TABLE analyses ADD COLUMN allocation_set_id INTEGER REFERENCES allocation_sets(id)")
     if conn.execute("SELECT COUNT(*) FROM allocation_sets").fetchone()[0] == 0:

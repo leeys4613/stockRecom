@@ -18,7 +18,7 @@ CAPS = {"us": 10.0, "kr": 6.0}
 
 
 def an(**kw):
-    base = dict(summary_3lines=["a", "b", "c"], adjustment=0, risk_comment="r")
+    base = dict(summary_lines=["a", "b", "c", "d"], adjustment=0, risk_comment="r")
     base.update(kw)
     return llm.Analysis(**base)
 
@@ -82,7 +82,8 @@ def test_prompt_mentions_policy_rules():
 
 # ---------- 가중치 세트의 정책 상한 ----------
 def test_validate_policy():
-    assert W.validate_policy({"us": "10", "kr": 6}) == {"us": 10.0, "kr": 6.0}
+    assert W.validate_policy({"us": "10", "kr": 6}) == {"us": 10.0, "kr": 6.0, **{k: config.POLICY_CAPS_DEFAULT[k] for k in ("ai", "mem")}}   # ai/mem 은 입력이 없으면 기본값
+    assert W.validate_policy({"us": 1, "kr": 2, "ai": 3, "mem": 4}) == {"us": 1.0, "kr": 2.0, "ai": 3.0, "mem": 4.0}
     for bad in ({"us": 21, "kr": 1}, {"us": -1, "kr": 1}, {"us": "x", "kr": 1}, {"us": "nan", "kr": 1}, {"us": 1}, None):
         with pytest.raises(W.WeightError):
             W.validate_policy(bad)
@@ -94,14 +95,14 @@ def test_new_version_inherits_active_policy_when_not_given():
     with db.session() as conn:
         W.create_version(conn, {k: 10 for k in keys}, {k: 2 for k in keys}, "a", {"us": 4, "kr": 2})
         nid = W.create_version(conn, {k: 10 for k in keys}, {k: 2 for k in keys}, "b")
-        assert W.get(conn, nid)["policy"] == {"us": 4.0, "kr": 2.0}
+        assert W.get(conn, nid)["policy"] == {"us": 4.0, "kr": 2.0, "ai": config.POLICY_CAPS_DEFAULT["ai"], "mem": config.POLICY_CAPS_DEFAULT["mem"]}
 
 
 def test_fresh_db_v1_includes_new_indicators_and_policy():
     db.init_db()
     with db.session() as conn:
         v1 = W.get_active(conn)
-    assert v1["policy"] == config.POLICY_CAPS_DEFAULT
+    assert v1["policy"] == config.POLICY_CAPS_DEFAULT and {"ai", "mem"} <= set(v1["policy"])
     assert {"VIX", "SPX", "DXY"} <= set(v1["weights"])
     assert sum(abs(w) for w in v1["weights"].values()) == pytest.approx(1.0)
     assert config.SCORE_DIRECTION["VIX"] == -1 and config.SCORE_DIRECTION["SPX"] == 1 and config.SCORE_DIRECTION["DXY"] == -1
@@ -109,7 +110,7 @@ def test_fresh_db_v1_includes_new_indicators_and_policy():
 
 # ---------- 파이프라인 ----------
 def policy_payload(**over):
-    p = dict(summary_3lines=["a", "b", "c"], adjustment=2, risk_comment="r",
+    p = dict(summary_lines=["a", "b", "c", "d"], adjustment=2, risk_comment="r",
              us_policy_effect=-2, us_policy_evidence=[US_T[0]],
              kr_policy_effect=1, kr_policy_evidence=[KR_T[0]])
     p.update(over)
@@ -156,7 +157,7 @@ def test_policy_news_separated_from_general_news_in_llm_input():
     run(Spy(policy_payload(us_policy_effect=0, us_policy_evidence=[], kr_policy_effect=0, kr_policy_evidence=[])))
     body = seen["prompt"].split("<input>")[1]
     ctx = json.loads(body.split("</input>")[0])
-    assert set(ctx["policy_news"]) == {"us", "kr"}
+    assert set(ctx["policy_news"]) == {"us", "kr", "ai", "mem"}
     assert "미국 정책·정치" not in ctx["news"] and "한국 증시 부양·자본시장 정책" not in ctx["news"]
     assert {"VIX", "SPX", "DXY"} <= {m["key"] for m in ctx["macro"]}
 
@@ -196,7 +197,7 @@ def test_dashboard_shows_policy_panel_with_evidence():
         rss_for({"%ED%8A%B8%EB%9F%BC%ED%94%84": US_T}))
     with client() as c:
         html = c.get("/").text
-    assert 'id="policy"' in html and "정책 반영" in html and "근거 보기" in html
+    assert 'id="policy"' in html and "정책·시장 반응" in html and "근거 보기" in html
     assert "트럼프, 반도체 관세 25% 부과 확정" in html and "상한 ±10" in html
     assert "입력 헤드라인에서 근거를 확인하지 못한 판정은 0으로 처리" in html
 
@@ -244,7 +245,7 @@ def test_llm_input_includes_algorithm_structure():
     alg = ctx["algorithm"]
     assert "최종 점수 = 규칙 점수" in alg["formula"]
     assert len(alg["bands"]) == 5 and alg["bands"][0]["band"].startswith("매수 가능성")
-    assert alg["policy_caps_pts"] == {"us": 10.0, "kr": 6.0}
+    assert alg["policy_caps_pts"] == config.POLICY_CAPS_DEFAULT
     assert alg["rule_score_band"]["band"].startswith("매수 가능성") and "%" in alg["rule_score_band"]["equity"]
     assert abs(sum(abs(w) for w in alg["indicator_weights"].values()) - 1.0) < 0.02
     with db.session() as conn:     # 저장되는 inputs 스냅샷에도 같은 구조가 남는다 (사후 검증용)

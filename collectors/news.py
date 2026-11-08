@@ -8,7 +8,8 @@ from urllib.parse import quote
 
 import config
 
-RSS_URL = "https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
+RSS_URL = "https://news.google.com/rss/search?q={q}&{locale}"
+DEFAULT_LOCALE = "hl=ko&gl=KR&ceid=KR:ko"
 MAX_TITLE = 200
 
 
@@ -73,7 +74,8 @@ def collect_one(topic, fetcher=http_fetch):
     limit = config.NEWS_PER_TOPIC_OVERRIDE.get(topic, config.NEWS_PER_TOPIC)
     fetched_at = now_iso()
     try:
-        content = fetcher(RSS_URL.format(q=quote(f"{query} when:{max_age}d")))
+        content = fetcher(RSS_URL.format(q=quote(f"{query} when:{max_age}d"),
+                                          locale=config.NEWS_LOCALE.get(topic, DEFAULT_LOCALE)))
         items = parse_items(content, limit, max_age)
         return dict(topic=topic, status="ok", error=None, fetched_at=fetched_at, items=items)
     except Exception as e:
