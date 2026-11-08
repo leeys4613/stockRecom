@@ -228,7 +228,7 @@ def test_settings_has_policy_caps_and_validates():
 def test_prompt_asks_for_judgment_not_number_listing():
     p = llm.SYSTEM_PROMPT
     for needle in ("[국면]", "[핵심 동인]", "[리스크·운용]", "판단", "반복하지 말고", "algorithm",
-                   "단정하지 말고", "입력에 없는 사실", "개별 종목의 매수/매도는 말하지 않는다"):
+                   "단정하지 말고", "입력에 없는 사실", "개별 종목의 매수/매도는 말하지 않는다", "rule_score_band 와"):
         assert needle in p, needle
 
 

@@ -135,9 +135,9 @@
   {% for r in rows %}
   <tr data-key="{{ r.key }}">
     <td>{{ r.name }}</td>
-    <td>{% if r.value is not none %}{{ "{:,.2f}".format(r.value) }}{% else %}-{% endif %}</td>
+    <td>{% if r.value is not none %}{% if r.kind == 'feature' and r.unit == '%' %}{{ "{:+.2f}".format(r.value) }}%{% else %}{{ "{:,.2f}".format(r.value) }}{% endif %}{% else %}-{% endif %}</td>
     <td class="{% if r.change_pct is not none %}{{ 'up' if r.change_pct >= 0 else 'down' }}{% endif %}">
-      {% if r.change_pct is not none %}{{ "{:+.2f}".format(r.change_pct) }}%{% else %}-{% endif %}</td>
+      {% if r.change_pct is not none %}{{ "{:+.2f}".format(r.change_pct) }}%{% elif r.kind == 'feature' %}<span class="mut">추세</span>{% else %}-{% endif %}</td>
     <td><span class="badge {{ r.freshness }}">{{ {'fresh':'최신','stale':'오래됨','failed':'수집 실패','none':'데이터 없음'}[r.freshness] }}</span></td>
   </tr>
   {% if r.freshness == 'failed' %}

@@ -154,6 +154,21 @@ def _migrate(conn):
             (datetime.now(timezone.utc).isoformat(timespec="seconds"), f"v{nxt} 위험지표·정책 반영",
              json.dumps(config.SCORE_WEIGHTS), json.dumps(config.SCORE_SATURATION_PCT),
              json.dumps(config.POLICY_CAPS_DEFAULT)))
+    # 새 지표가 추가됐는데 현재 적용 중인 가중치 세트에 없으면: 기존 상대 비중을 유지한 채 새 지표를 기본 비중으로 넣은
+    # 새 버전을 추가한다 (사용자가 조정한 비중을 덮어쓰지 않고, 과거 분석/성과 비교는 이전 버전으로 남는다).
+    latest = conn.execute("SELECT * FROM weight_sets ORDER BY id DESC LIMIT 1").fetchone()
+    lw, lsat = json.loads(latest["weights"]), json.loads(latest["saturation"])
+    missing_keys = [k for k in config.SCORE_WEIGHTS if k not in lw]
+    if missing_keys:
+        new_share = sum(abs(config.SCORE_WEIGHTS[k]) for k in missing_keys)
+        merged = {k: round(w * (1 - new_share), 6) for k, w in lw.items() if k in config.SCORE_WEIGHTS}
+        merged.update({k: config.SCORE_WEIGHTS[k] for k in missing_keys})
+        sat = {**config.SCORE_SATURATION_PCT, **{k: v for k, v in lsat.items() if k in config.SCORE_WEIGHTS}}
+        nxt = conn.execute("SELECT COALESCE(MAX(id),0)+1 FROM weight_sets").fetchone()[0]
+        conn.execute(
+            "INSERT INTO weight_sets (created_at,label,weights,saturation,policy) VALUES (?,?,?,?,?)",
+            (datetime.now(timezone.utc).isoformat(timespec="seconds"), f"v{nxt} 추세지표(KOSPI·VIX 10일) 반영",
+             json.dumps(merged), json.dumps(sat), latest["policy"]))
     if "allocation_set_id" not in cols:
         conn.execute("ALTER TABLE analyses ADD COLUMN allocation_set_id INTEGER REFERENCES allocation_sets(id)")
     if conn.execute("SELECT COUNT(*) FROM allocation_sets").fetchone()[0] == 0:

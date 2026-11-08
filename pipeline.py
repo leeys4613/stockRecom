@@ -25,6 +25,20 @@ def _clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
 
+def score_inputs(macro_rows):
+    """지표별 점수 입력. 일반 지표는 전일 변동률, 파생(추세/수준) 지표는 값 자체(중립값 보정).
+    최신이 아닌(stale/failed) 지표는 None(결측) 처리한다."""
+    out = {}
+    for r in macro_rows:
+        if r["freshness"] != "fresh":
+            out[r["key"]] = None
+        elif r["kind"] == "feature":
+            out[r["key"]] = r["value"] - config.SCORE_CENTER.get(r["key"], 0.0)
+        else:
+            out[r["key"]] = r["change_pct"]
+    return out
+
+
 def build_context(macro_rows, news_rows, scored):
     policy_topics = set(config.POLICY_TOPICS.values())
     return {
@@ -32,7 +46,8 @@ def build_context(macro_rows, news_rows, scored):
         "coverage": round(scored["coverage"], 2),
         "missing": scored["missing"],
         "contributions": {k: round(v, 3) for k, v in scored["contributions"].items()},
-        "macro": [dict(key=r["key"], name=r["name"], value=r["value"],
+        "macro": [dict(key=r["key"], name=r["name"], kind=r["kind"],
+                       value=None if r["value"] is None else round(r["value"], 2),
                        change_pct=None if r["change_pct"] is None else round(r["change_pct"], 2),
                        freshness=r["freshness"]) for r in macro_rows],
         "news": {n["name"]: [i["title"] for i in n["headlines"]] for n in news_rows
@@ -56,15 +71,21 @@ def algorithm_info(wset, aset, scored):
         "policy_caps_pts": wset.get("policy") or {},
         "bands": [dict(score_from=b[0], band=f"매수 가능성 {b[1]}", equity=f"{b[2]}~{b[3]}%") for b in aset["bands"]],
         "indicator_weights": {k: round(v, 3) for k, v in wset["weights"].items()},
+        "indicator_notes": {
+            "kind=change": "value 는 현재값, change_pct 는 전일 변동률(점수 입력)",
+            "kind=feature": "value 자체가 추세·수준 지표(점수 입력): KOSPI10D=KOSPI 최근 10거래일 변화율(%), "
+                            "KOSPIDD=최근 10거래일 고점 대비 낙폭(%), VIXAVG=VIX 10일 평균(20이 중립, 높을수록 위험 국면). "
+                            "하루 반등에 점수가 과대평가되지 않도록 넣은 지표다",
+        },
     }
 
 
-def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetcher=None):
+def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetcher=None, history_fetcher=None):
     """한 번의 종합 분석. 이미 실행 중이면 None. 성공 시 저장된 analyses.id."""
     if not _lock.acquire(blocking=False):
         return None
     try:
-        macro_rows_new = macro.collect_all(macro_fetcher or macro.yf_fetch)
+        macro_rows_new = macro.collect_all(macro_fetcher or macro.yf_fetch, history_fetcher)
         news_new = news.collect_all(news_fetcher or news.http_fetch)
         with db.session() as conn:
             macro.save(conn, macro_rows_new)
@@ -75,9 +96,7 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
         with db.session() as conn:
             wset = weights_mod.get_active(conn)  # 이번 분석에 쓸 가중치/비중 규칙 버전 (분석 도중 바뀌어도 일관되게)
             aset = allocations.get_active(conn)
-        changes = {r["key"]: (r["change_pct"] if r["freshness"] == "fresh" else None)
-                   for r in macro_rows}
-        scored = engine.compute_score(changes, wset["weights"], wset["saturation"])
+        scored = engine.compute_score(score_inputs(macro_rows), wset["weights"], wset["saturation"])
 
         ctx = build_context(macro_rows, news_rows, scored)
         ctx["algorithm"] = algorithm_info(wset, aset, scored)

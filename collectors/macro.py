@@ -33,8 +33,57 @@ def collect_one(key, fetcher=yf_fetch):
                     fetched_at=fetched_at)
 
 
-def collect_all(fetcher=yf_fetch):
-    return [collect_one(k, fetcher) for k in config.MACRO_INDICATORS]
+def yf_closes(symbol, period="2mo"):
+    """최근 일별 종가 목록(오름차순). 추세 지표용."""
+    import yfinance as yf
+
+    closes = yf.Ticker(symbol).history(period=period, interval="1d")["Close"].dropna()
+    return [float(x) for x in closes]
+
+
+def kospi_features(closes, days=None):
+    """KOSPI 종가 -> (days 거래일 변화율 %, days 일 고점 대비 %). 데이터가 부족하면 예외."""
+    days = days or config.TREND_DAYS
+    if len(closes) < days + 1:
+        raise ValueError(f"KOSPI 종가 {len(closes)}개뿐 ({days + 1}개 필요)")
+    last = closes[-1]
+    window = closes[-(days + 1):]
+    return (last / window[0] - 1) * 100, (last / max(window) - 1) * 100
+
+
+def vix_average(closes, days=None):
+    days = days or config.TREND_DAYS
+    if len(closes) < days:
+        raise ValueError(f"VIX 종가 {len(closes)}개뿐 ({days}개 필요)")
+    return sum(closes[-days:]) / days
+
+
+def _derived_row(key, value, fetched_at, error=None):
+    return dict(key=key, status="ok" if error is None else "failed", value=value, prev_value=None,
+                change_pct=None, error=error, fetched_at=fetched_at)
+
+
+def derive(history_fetcher=None):
+    """파생 추세 지표: KOSPI 10거래일 변화/고점 대비, VIX 10일 평균. 실패는 지표별로 기록한다."""
+    fetch = history_fetcher or yf_closes
+    fetched_at = now_iso()
+    out = []
+    try:
+        chg, dd = kospi_features(fetch(config.KOSPI_SYMBOL))
+        out += [_derived_row("KOSPI10D", chg, fetched_at), _derived_row("KOSPIDD", dd, fetched_at)]
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"[:300]
+        out += [_derived_row("KOSPI10D", None, fetched_at, err), _derived_row("KOSPIDD", None, fetched_at, err)]
+    try:
+        out.append(_derived_row("VIXAVG", vix_average(fetch(config.MACRO_INDICATORS["VIX"][1])), fetched_at))
+    except Exception as e:
+        out.append(_derived_row("VIXAVG", None, fetched_at, f"{type(e).__name__}: {e}"[:300]))
+    return out
+
+
+def collect_all(fetcher=yf_fetch, history_fetcher=None):
+    rows = [collect_one(k, fetcher) for k, (_, sym) in config.MACRO_INDICATORS.items() if sym is not None]
+    return rows + derive(history_fetcher)
 
 
 def save(conn, rows):
@@ -56,7 +105,8 @@ def latest(conn):
             "SELECT * FROM macro_snapshots WHERE key=? AND status='ok' "
             "ORDER BY fetched_at DESC, id DESC LIMIT 1", (key,)).fetchone()
         out.append(dict(
-            key=key, name=name, symbol=symbol,
+            key=key, name=name, symbol=symbol, kind="feature" if symbol is None else "change",
+            unit=config.DERIVED_UNITS.get(key, ""),
             status=last["status"] if last else "none",
             error=last["error"] if last else None,
             attempted_at=last["fetched_at"] if last else None,

@@ -2,7 +2,7 @@ import pytest
 
 import config
 import performance
-from collectors import reports
+from collectors import macro, reports
 
 
 @pytest.fixture(autouse=True)
@@ -20,6 +20,7 @@ def isolated(tmp_path, monkeypatch):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(reports, "yf_fetch", no_symbol_network)
     monkeypatch.setattr(config, "REPORTS_DELAY_SEC", 0)
+    monkeypatch.setattr(macro, "yf_closes", lambda symbol, period="2mo": flat_closes(start=20.0 if symbol == "^VIX" else 5000.0))
 
 
 def make_rss(items=None):
@@ -69,3 +70,12 @@ def consensus(price=100.0, target=130.0, rec=1.8, n=12, **over):
              strong_buy=4, buy=6, hold=2, sell=0, strong_sell=0)
     d.update(over)
     return d
+
+
+def flat_closes(n=30, start=100.0, step=0.0):
+    """추세 지표용 합성 종가: 기본은 평탄(KOSPI 변화 0, 낙폭 0, VIX 평균=종가)."""
+    return [start + step * i for i in range(n)]
+
+
+def history_down(symbol, period="2mo"):
+    raise RuntimeError("history down")

@@ -9,7 +9,7 @@ import db
 import gauge
 import main
 import pipeline
-from tests.conftest import GOOD, FakeProvider, fake_rss, macro_ok
+from tests.conftest import GOOD, FakeProvider, fake_rss, history_down, macro_ok
 
 BANDS = [list(b) for b in config.ALLOCATION_BANDS]
 
@@ -89,7 +89,7 @@ def test_dashboard_gauge_without_score():
 
     def fail(symbol):
         raise RuntimeError("down")
-    pipeline.run_once(FakeProvider(GOOD), fail, fake_rss)
+    pipeline.run_once(FakeProvider(GOOD), fail, fake_rss, history_fetcher=history_down)
     with TestClient(main.app) as c:
         html = c.get("/").text
     assert 'id="gauge"' in html and 'id="needle"' not in html
@@ -140,6 +140,6 @@ def test_dashboard_has_no_allocation_chart_without_score():
 
     def fail(symbol):
         raise RuntimeError("down")
-    pipeline.run_once(FakeProvider(GOOD), fail, fake_rss)
+    pipeline.run_once(FakeProvider(GOOD), fail, fake_rss, history_fetcher=history_down)
     with TestClient(main.app) as c:
         assert 'id="allocbar"' not in c.get("/").text

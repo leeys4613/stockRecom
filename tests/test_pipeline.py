@@ -5,12 +5,12 @@ import config
 import db
 import main
 import pipeline
-from tests.conftest import GOOD, FakeProvider, fake_rss, macro_ok
+from tests.conftest import GOOD, FakeProvider, fake_rss, history_down, macro_ok
 
 
-def run(provider, macro_fetcher=macro_ok):
+def run(provider, macro_fetcher=macro_ok, history_fetcher=None):
     db.init_db()
-    return pipeline.run_once(provider, macro_fetcher, fake_rss)
+    return pipeline.run_once(provider, macro_fetcher, fake_rss, history_fetcher=history_fetcher)
 
 
 def latest():
@@ -51,7 +51,7 @@ def test_all_indicators_failed_skips_llm():
     def fetch(symbol):
         raise RuntimeError("down")
     p = FakeProvider(GOOD)
-    run(p, fetch)
+    run(p, fetch, history_down)          # 추세 지표(KOSPI/VIX 이력)도 실패
     a = latest()
     assert a["llm_status"] == "skipped" and a["final_score"] is None
     assert p.calls == 0 and a["allocation"] is None

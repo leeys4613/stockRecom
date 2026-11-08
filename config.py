@@ -22,7 +22,16 @@ MACRO_INDICATORS = {
     "VIX": ("VIX 공포지수", "^VIX"),
     "SPX": ("S&P 500", "^GSPC"),
     "DXY": ("달러인덱스", "DX-Y.NYB"),
+    # 파생 지표(symbol=None): 전일 변동률이 아니라 값 자체(추세·수준)를 점수에 쓴다. 하루 변동률만으로는
+    # 급락 직후 반등일에 점수가 과대평가되는 문제를 보완한다
+    "KOSPI10D": ("KOSPI 10거래일 변화", None),
+    "KOSPIDD": ("KOSPI 10일 고점 대비", None),
+    "VIXAVG": ("VIX 10일 평균 (20=중립)", None),
 }
+DERIVED_UNITS = {"KOSPI10D": "%", "KOSPIDD": "%", "VIXAVG": ""}
+SCORE_CENTER = {"VIXAVG": 20.0}      # 점수 입력 = 값 - 중립값 (VIX 10일 평균이 20 이면 0점)
+KOSPI_SYMBOL = "^KS11"
+TREND_DAYS = 10   # 추세 지표의 관측 기간(거래일): KOSPI 변화·고점 대비·VIX 평균
 
 # 데이터 신선도 기준(시간): 이보다 오래되면 stale
 STALE_AFTER_HOURS = 6
@@ -30,16 +39,19 @@ STALE_AFTER_HOURS = 6
 # --- 점수 엔진 초기안 (⚠ 사람 확인 필요) ---
 # 가중치: 양수 = 지표가 오르면 점수↑, 음수 = 오르면 점수↓. 절대값 합 = 1.0
 SCORE_WEIGHTS = {
-    "SOX": 0.22,
-    "USDKRW": -0.20,
-    "US10Y": -0.12,
-    "USDJPY": 0.04,
-    "USDCNH": -0.08,
-    "BTC": 0.04,
-    "WTI": -0.08,
-    "VIX": -0.10,
-    "SPX": 0.08,
-    "DXY": -0.04,
+    "SOX": 0.165,
+    "USDKRW": -0.15,
+    "US10Y": -0.09,
+    "USDJPY": 0.03,
+    "USDCNH": -0.06,
+    "BTC": 0.03,
+    "WTI": -0.06,
+    "VIX": -0.075,     # VIX 전일 변화율
+    "SPX": 0.06,
+    "DXY": -0.03,
+    "VIXAVG": -0.10,   # VIX 10일 평균 수준: 높을수록 위험 국면
+    "KOSPI10D": 0.08,  # KOSPI 최근 10거래일 변화
+    "KOSPIDD": 0.07,   # KOSPI 10일 고점 대비 낙폭
 }
 # 지표 방향(고정): +1 = 지표가 오르면 점수↑, -1 = 오르면 점수↓. 사용자 조정은 크기만 허용한다
 SCORE_DIRECTION = {k: (1 if w >= 0 else -1) for k, w in SCORE_WEIGHTS.items()}
@@ -55,6 +67,9 @@ SCORE_SATURATION_PCT = {
     "VIX": 20.0,
     "SPX": 2.0,
     "DXY": 0.7,
+    "VIXAVG": 10.0,   # 중립(20) 대비 ±10pt 이면 포화
+    "KOSPI10D": 8.0,   # 10거래일 ±8%
+    "KOSPIDD": 10.0,   # 10일 고점 대비 -10%
 }
 # 점수 구간 -> 주식 비중 범위(%). (하한점수, 라벨, 주식 최소, 주식 최대) 내림차순 검사
 # 라벨은 화면에서 "매수 가능성 <라벨>"로 표시된다 (확률이 아니라 점수 구간)
