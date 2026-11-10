@@ -140,6 +140,10 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
         chunk_fetcher = chunk_fetcher or yf_chunk
         index_fetcher = index_fetcher or yf_index
         mcap_fetcher = mcap_fetcher or yf_mcap
+        try:    # 지난 스캔 후보의 5·10일 뒤 성과를 채운다(실패해도 이번 스캔에는 영향 없음)
+            fill_outcomes(conn_factory, chunk_fetcher, index_fetcher)
+        except Exception as e:
+            log.warning("fill_outcomes failed: %s", type(e).__name__)
         delay = config.SCREEN_MCAP_DELAY_SEC if delay is None else delay
         with conn_factory() as conn:
             universe = [dict(r) for r in conn.execute("SELECT code,name,market,industry FROM stock_master")]
@@ -210,6 +214,12 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
                 per[c["market"]] += 1
                 kept_top.append(dict(c, rank=per[c["market"]]))
         kept = kept_top
+        kept_codes = {c["code"] for c in kept}
+        others = []         # 추천에서 빠진 풀 구성원도 성과 비교용으로 기록한다(화면에는 안 나옴)
+        for c in final:
+            if c["code"] not in kept_codes:
+                nobg = ai_status == "ok" and notes[c["code"]]["reason_type"] == "뚜렷한 배경 없음"
+                others.append(dict(c, rank=0, status="nobg" if nobg else "cut"))
         leaders = _leaders(conn_factory, kept, universe, allm, mcap_fetcher, delay)
         with conn_factory() as conn:
             rid = conn.execute(
@@ -219,17 +229,129 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
                  json.dumps({m: dict(r3=round(v["r3"], 2), r5=round(v["r5"], 2), r10=round(v["r10"], 2)) for m, v in idx.items()}),
                  len(universe), loaded, failed, len(cands), missing, len(kept), ai_status, ai_error, len(final), dropped)).lastrowid
             conn.executemany(
-                "INSERT INTO screen_items (run_id,rank,code,name,market,price,r3,r5,r10,ex3,ex5,ex10,beat_days,value20,mcap,vol_ratio,flags,ai,leader) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO screen_items (run_id,rank,code,name,market,price,r3,r5,r10,ex3,ex5,ex10,beat_days,value20,mcap,vol_ratio,flags,ai,leader,status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [(rid, n, c["code"], c["name"], c["market"], c["price"], round(c["r3"], 2), round(c["r5"], 2), round(c["r10"], 2),
                   round(c["ex3"], 2), round(c["ex5"], 2), round(c["ex10"], 2), c["beat_days"], c["value20"], c["mcap"],
                   None if c["vol_ratio"] is None else round(c["vol_ratio"], 2), json.dumps(c["flags"]),
                   json.dumps(notes[c["code"]], ensure_ascii=False) if c["code"] in notes else None,
-                  json.dumps(leaders[c["code"]], ensure_ascii=False) if leaders.get(c["code"]) else None)
-                 for n, c in ((c["rank"], c) for c in kept)])
+                  json.dumps(leaders[c["code"]], ensure_ascii=False) if leaders.get(c["code"]) else None,
+                  c.get("status", "kept"))
+                 for n, c in ((c["rank"], c) for c in kept + others)])
         return rid
     finally:
         _lock.release()
+
+
+def fill_outcomes(conn_factory, chunk_fetcher=None, index_fetcher=None):
+    """기준일로부터 5·10거래일이 지난 후보의 실제 성과(종목 수익률, 소속 지수 대비 초과수익)를 채운다. 반환: 갱신한 행 수."""
+    chunk_fetcher = chunk_fetcher or yf_chunk
+    index_fetcher = index_fetcher or yf_index
+    with conn_factory() as conn:
+        pending = [dict(r) for r in conn.execute(
+            "SELECT i.run_id, i.code, i.market, r.asof FROM screen_items i JOIN screen_runs r ON r.id=i.run_id "
+            "WHERE r.status='ok' AND r.asof IS NOT NULL AND (i.fwd5 IS NULL OR i.fwd10 IS NULL) "
+            "AND r.asof >= date('now','-45 days') AND r.asof <= date('now','-6 days')")]
+    if not pending:
+        return 0
+    syms = sorted({f"{p['code']}.{p['market']}" for p in pending})
+    bars = {}
+    for i in range(0, len(syms), config.SCREEN_CHUNK):
+        try:
+            bars.update(chunk_fetcher(syms[i:i + config.SCREEN_CHUNK]))
+        except Exception as e:
+            log.warning("outcome chunk failed: %s", type(e).__name__)
+    idx = {}
+    for m in {p["market"] for p in pending}:
+        try:
+            idx[m] = dict(index_fetcher(config.SCREEN_INDEX[m]))
+        except Exception as e:
+            log.warning("outcome index failed: %s", type(e).__name__)
+    n = 0
+    now = now_iso()
+    with conn_factory() as conn:
+        for p in pending:
+            b = bars.get(f"{p['code']}.{p['market']}")
+            im = idx.get(p["market"])
+            if not b or not im:
+                continue
+            dates = [x[0] for x in b]
+            if p["asof"] not in dates or p["asof"] not in im:
+                continue
+            pos = dates.index(p["asof"])
+            entry = b[pos][1]
+            vals = {}
+            for h in (5, 10):
+                if pos + h < len(b) and b[pos + h][0] in im and entry > 0:
+                    ret = (b[pos + h][1] / entry - 1) * 100
+                    iret = (im[b[pos + h][0]] / im[p["asof"]] - 1) * 100
+                    vals[h] = (round(ret, 2), round(ret - iret, 2))
+            if vals:
+                conn.execute(
+                    "UPDATE screen_items SET fwd5=COALESCE(?,fwd5), fwd5_ex=COALESCE(?,fwd5_ex), fwd10=COALESCE(?,fwd10), "
+                    "fwd10_ex=COALESCE(?,fwd10_ex), fwd_at=? WHERE run_id=? AND code=?",
+                    (*(vals.get(5) or (None, None)), *(vals.get(10) or (None, None)), now, p["run_id"], p["code"]))
+                n += 1
+    return n
+
+
+MIN_SAMPLE = 30
+
+
+def _agg(rows):
+    def side(key):
+        v = [r[key] for r in rows if r[key] is not None]
+        return dict(n=len(v), mean=sum(v) / len(v) if v else None, hit=sum(1 for x in v if x > 0) / len(v) * 100 if v else None)
+    return dict(d5=side("fwd5_ex"), d10=side("fwd10_ex"))
+
+
+def review(conn):
+    """후보 유형별 실제 성과(지수 대비 초과수익). 표본이 MIN_SAMPLE 미만인 그룹은 small=True."""
+    rows = []
+    for r in conn.execute("SELECT i.*, r.asof FROM screen_items i JOIN screen_runs r ON r.id=i.run_id WHERE r.status='ok' "
+            "AND r.id IN (SELECT MAX(id) FROM screen_runs WHERE status='ok' GROUP BY asof)"):
+        d = dict(r)
+        d["ai"] = json.loads(d["ai"]) if d.get("ai") else None
+        d["leader"] = json.loads(d["leader"]) if d.get("leader") else None
+        d["flags"] = json.loads(d["flags"]) if d.get("flags") else []
+        rows.append(d)
+    done = [r for r in rows if r["fwd5_ex"] is not None or r["fwd10_ex"] is not None]
+
+    def leader_key(r):
+        ld = r["leader"]
+        if not ld:
+            return "업종 정보 없음"
+        return "자신이 대장주" if ld["is_self"] else "대장주도 강세" if ld["ex5"] > 0 else "대장주는 지수 이하"
+
+    def tone_key(r):
+        t = (r["ai"] or {}).get("news_tone")
+        return None if t is None else "뉴스 긍정(+1 이상)" if t >= 1 else "뉴스 부정(-1 이하)" if t <= -1 else "뉴스 중립(0)"
+
+    specs = [
+        ("추천 여부", lambda r: dict(kept="추천(화면에 표시)", nobg="AI가 배경 불명으로 제외", cut="순위권 밖(시장별 상위 밖)").get(r["status"])),
+        ("시장", lambda r: "코스피" if r["market"] == "KS" else "코스닥"),
+        ("강세 배경(AI)", lambda r: (r["ai"] or {}).get("reason_type")),
+        ("재료 성격(AI)", lambda r: (r["ai"] or {}).get("catalyst_kind")),
+        ("뉴스 톤(AI)", tone_key),
+        ("단기 과열 플래그", lambda r: "과열 표시 있음" if "overheat" in r["flags"] else "과열 표시 없음"),
+        ("업종 대장주", leader_key),
+        ("추천 순위(시장 내)", lambda r: None if r["status"] != "kept" else "1~3위" if r["rank"] <= 3 else "4~10위"),
+    ]
+    groups = []
+    for title, fn in specs:
+        buckets = {}
+        for r in done:
+            k = fn(r)
+            if k is not None:
+                buckets.setdefault(k, []).append(r)
+        items = []
+        for k, rs in sorted(buckets.items(), key=lambda kv: -len(kv[1])):
+            a = _agg(rs)
+            items.append(dict(label=k, total=len(rs), small=max(a["d5"]["n"], a["d10"]["n"]) < MIN_SAMPLE, **a))
+        groups.append(dict(title=title, items=items))
+    pending = sum(1 for r in rows if r["fwd5_ex"] is None)
+    return dict(overall=_agg(done), n_items=len(rows), n_done=len(done), n_pending=pending,
+                n_runs=len({r["run_id"] for r in rows}), groups=groups, min_sample=MIN_SAMPLE)
 
 
 def _leaders(conn_factory, kept, universe, allm, mcap_fetcher, delay):
@@ -324,7 +446,7 @@ def latest(conn):
     ok = dict(ok)
     ok["index_ret"] = json.loads(ok["index_ret"]) if ok["index_ret"] else {}
     items = []
-    for r in conn.execute("SELECT * FROM screen_items WHERE run_id=? ORDER BY market DESC, rank", (ok["id"],)):
+    for r in conn.execute("SELECT * FROM screen_items WHERE run_id=? AND status='kept' ORDER BY market DESC, rank", (ok["id"],)):
         d = dict(r)
         d["flags"] = json.loads(d["flags"]) if d["flags"] else []
         d["ai"] = json.loads(d["ai"]) if d.get("ai") else None

@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import alerts
+import analog
+import history
 import allocations
 import config
 import db
@@ -19,6 +21,7 @@ import screener
 import stockmaster
 import weights as weights_mod
 from scoring import picks as picks_mod
+from scoring import sentiment
 from scoring import policy as policy_mod
 from collectors import macro, news, reports
 
@@ -98,10 +101,47 @@ def screener_page(request: Request):
     return templates.TemplateResponse(request, "screener.html", ctx)
 
 
+@app.get("/screener/review")
+def screener_review_page(request: Request):
+    with db.session() as conn:
+        rv = screener.review(conn)
+    return templates.TemplateResponse(request, "screener_review.html", dict(active="screen", rv=rv))
+
+
 @app.post("/screener/refresh")
 def screener_refresh(background: BackgroundTasks):
     background.add_task(screener.run, db.session)
     return RedirectResponse("/screener", status_code=303)
+
+
+@app.get("/analog")
+def analog_page(request: Request):
+    with db.session() as conn:
+        ks, vx = history.load(conn, "KOSPI"), history.load(conn, "VIX")
+        live = {r["key"]: r["value"] for r in macro.latest(conn) if r["freshness"] == "fresh" and r["value"] is not None}
+    rows = analog.build_rows(ks, vx) if ks and vx else []
+    ctx = dict(active="analog", ready=bool(rows), sep=config.ANALOG_SEP_DAYS,
+               span=dict(start=rows[0]["date"] if rows else "-", end=ks[-1][0] if ks else "-", n=len(rows)))
+    if rows:
+        bt, base = analog.backtest(rows)
+        keys = ("VIX", "VIXAVG", "KOSPI10D", "KOSPIDD")
+        if all(k in live for k in keys):
+            cur = dict(vix=live["VIX"], vixavg=live["VIXAVG"], k10=live["KOSPI10D"], kdd=live["KOSPIDD"])
+            cur_src = "앱의 최신 지표"
+        else:
+            cur = {k: rows[-1][k] for k in ("vix", "vixavg", "k10", "kdd")}
+            cur_src = f"일봉 기준 {rows[-1]['date']}"
+        sig = sentiment.assess(vix=cur["vix"], vix_avg=cur["vixavg"], kospi_10d=cur["k10"], kospi_dd=cur["kdd"])
+        pool = [r for r in rows if r["i"] < rows[-1]["i"] - config.ANALOG_SEP_DAYS]      # 지금과 겹치는 최근 구간은 제외
+        near, near_sum = analog.nearest(pool, cur)
+        ctx.update(bt=bt, base=base, cur=cur, cur_src=cur_src, cur_label=sig["label"] if sig else "판단 불가", near=near, near_sum=near_sum)
+    return templates.TemplateResponse(request, "analog.html", ctx)
+
+
+@app.post("/analog/refresh")
+def analog_refresh(background: BackgroundTasks):
+    background.add_task(history.refresh, db.session)
+    return RedirectResponse("/analog", status_code=303)
 
 
 @app.get("/tracker")

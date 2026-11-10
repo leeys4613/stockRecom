@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>강세 종목 성과 검증</h2>
+<p class="mut">매 스캔 후보가 기준일 뒤 <b>5·10거래일</b> 동안 소속 지수(코스피/코스닥)보다 얼마나 더 올랐는지(초과수익)를 후보 유형별로 모읍니다.
+  "어떤 유형의 강세가 오래갔나"와 "AI가 배경 불명으로 뺀 종목은 정말 더 나빴나"를 확인하는 용도입니다.
+  <b>표본이 {{ rv.min_sample }}개 미만인 항목은 우연일 수 있어 결론을 내리지 마세요.</b> 투자 권유가 아닙니다.</p>
+<p><a href="/screener" style="color:inherit">← 강세 종목</a></p>
+
+<div class="card" id="review-summary">
+  <div>스캔 {{ rv.n_runs }}회 · 기록된 후보 {{ rv.n_items }}개(추천에서 빠진 종목 포함) · 성과가 채워진 후보 {{ rv.n_done }}개 · 대기 중 {{ rv.n_pending }}개</div>
+  {% set o5, o10 = rv.overall.d5, rv.overall.d10 %}
+  <div class="metrics" style="margin-top:6px">
+    <div class="m"><span class="k">5일 뒤 지수 대비 (전체)</span>{% if o5.n %}<span class="v {{ 'up' if o5.mean >= 0 else 'down' }}">{{ "{:+.1f}".format(o5.mean) }}%p</span><span class="sub">지수 이긴 비율 {{ "{:.0f}".format(o5.hit) }}% (n={{ o5.n }})</span>{% else %}<span class="v mut">아직 없음</span>{% endif %}</div>
+    <div class="m"><span class="k">10일 뒤 지수 대비 (전체)</span>{% if o10.n %}<span class="v {{ 'up' if o10.mean >= 0 else 'down' }}">{{ "{:+.1f}".format(o10.mean) }}%p</span><span class="sub">지수 이긴 비율 {{ "{:.0f}".format(o10.hit) }}% (n={{ o10.n }})</span>{% else %}<span class="v mut">아직 없음</span>{% endif %}</div>
+  </div>
+  {% if not rv.n_done %}<div class="mut" style="margin-top:6px">기준일로부터 6일 이상 지나야 5일 뒤 성과가 채워집니다(스캔 때마다 자동). 아직 결과가 없는 것이 정상입니다.</div>{% endif %}
+</div>
+
+{% for g in rv.groups %}{% if g['items'] %}
+<h2>{{ g.title }}</h2>
+<table class="review-table">
+  <thead><tr><th>구분</th><th>5일 뒤</th><th>10일 뒤</th></tr></thead>
+  <tbody>
+  {% for it in g['items'] %}
+  <tr class="{{ 'small' if it.small }}">
+    <td>{{ it.label }}{% if it.small %}<br><span class="down" style="font-size:12px">표본 부족</span>{% endif %}</td>
+    {% for s in (it.d5, it.d10) %}
+    <td>{% if s.n %}<span class="{{ 'up' if s.mean >= 0 else 'down' }}">{{ "{:+.1f}".format(s.mean) }}%p</span><br><span class="mut" style="font-size:12px">이긴 {{ "{:.0f}".format(s.hit) }}% · n={{ s.n }}</span>{% else %}<span class="mut">-</span>{% endif %}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}{% endfor %}
+
+<p class="mut">읽는 법 · %p는 그 종목 수익률에서 소속 지수 수익률을 뺀 값의 평균입니다. "이긴 비율"은 지수를 이긴 종목의 비율이며, 무작위라면 50% 안팎입니다.
+  기준일 종가 진입을 가정했고 비용·세금은 반영하지 않았습니다. 후보를 고르는 규칙을 이 결과에 맞춰 자주 바꾸면 과적합이 되므로, 표본이 충분히 쌓인 뒤 한 번에 점검하세요.</p>
+{% endblock %}

@@ -13,6 +13,7 @@ import db
 import alerts
 import allocations
 import gauge
+import history
 import performance
 import screener
 import stockviews
@@ -310,7 +311,12 @@ def scheduled_screen_job():
     """장 마감 후 지수 대비 강세 종목 스캔 (거래일만)."""
     if not calendar_kr.is_trading_day(calendar_kr.today_kst()):
         return None
-    return screener.run(db.session)
+    rid = screener.run(db.session)
+    try:    # 과거 비교용 장기 일봉도 같이 갱신한다(실패해도 스캔 결과에는 영향 없음)
+        history.refresh(db.session)
+    except Exception:
+        pass
+    return rid
 
 
 _stock_lock = threading.Lock()

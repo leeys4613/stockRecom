@@ -33,7 +33,10 @@ def isolated(tmp_path, monkeypatch):
     def no_push(sub, payload, pem):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(alerts, "send_push", no_push)                # 실제 푸시 발송 차단
+    import history
     import screener
+
+    monkeypatch.setattr(history, "yf_history", lambda s, p: (_ for _ in ()).throw(RuntimeError("no network in tests")))
 
     def no_screen(*a, **k):
         raise RuntimeError("no network in tests")

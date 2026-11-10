@@ -371,3 +371,127 @@ def test_leader_shown_on_page():
         html = c.get("/screener").text
     assert "업종 <b>소프트웨어</b>" in html and "대장주 <b>시총모름</b>" in html and "업종 대장주(시총 1위)" in html
     assert "KRX 표준 업종명" in html and "매도" not in html
+
+
+# ---------- 성과 검증 루프 ----------
+from datetime import date, timedelta  # noqa: E402
+
+
+def insert_run(asof, items):
+    """items: [(code, market, status, extra dict)]"""
+    db.init_db()
+    with db.session() as conn:
+        rid = conn.execute("INSERT INTO screen_runs (created_at,status,asof) VALUES ('2026-11-01T00:00:00+00:00','ok',?)", (asof,)).lastrowid
+        for n, (code, market, status, ex) in enumerate(items, 1):
+            conn.execute("INSERT INTO screen_items (run_id,rank,code,name,market,price,status,ai,flags,leader) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (rid, n if status == "kept" else 0, code, code, market, 100.0, status,
+                          json.dumps(ex.get("ai")) if ex.get("ai") else None, json.dumps(ex.get("flags", [])),
+                          json.dumps(ex.get("leader")) if ex.get("leader") else None))
+    return rid
+
+
+def day_labels(start, n):
+    return [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(n)]
+
+
+def bars_from(dates, closes):
+    return [(d, c, 1000.0) for d, c in zip(dates, closes)]
+
+
+def test_status_recorded_for_nobg_and_cut_and_hidden_on_page(monkeypatch):
+    monkeypatch.setattr(config, "STOCK_VIEW_DELAY_SEC", 0)
+    monkeypatch.setattr(config, "SCREEN_TOP_N", 1)
+    p = ScreenProvider(dict(items=[
+        dict(code="000001", reason_type="실적·펀더멘털", reason="r", news_tone=1, tone_evidence=[T1], catalyst_kind="지속성", risk=""),
+        dict(code="000002", reason_type="뚜렷한 배경 없음", reason="", news_tone=0, tone_evidence=[], catalyst_kind="불명", risk=""),
+        dict(code="000005", reason_type="업황·테마", reason="r", news_tone=1, tone_evidence=[T1], catalyst_kind="불명", risk="")]))
+    run_ai(p)
+    with db.session() as conn:
+        st = {r["code"]: (r["status"], r["rank"]) for r in conn.execute("SELECT code,status,rank FROM screen_items")}
+        _, _, items = S.latest(conn)
+    assert st["000001"] == ("kept", 1) and st["000002"] == ("nobg", 0) and st["000005"] == ("cut", 0)
+    assert [i["code"] for i in items] == ["000001"]                       # 화면에는 추천만
+
+
+def test_fill_outcomes_computes_excess_vs_own_index_after_5_and_10_days():
+    start = date.today() - timedelta(days=30)
+    ds = day_labels(start, 25)
+    asof = ds[5]
+    insert_run(asof, [("000001", "KS", "kept", {}), ("000003", "KQ", "nobg", {})])
+    # 000001: asof 종가 100 → 5일 뒤 110, 10일 뒤 121 / KOSPI: 1000 → 5일 뒤 1020, 10일 뒤 1030
+    c1 = [100.0] * 5 + [100.0] + [100 + 2 * i for i in range(1, 6)] + [110 + 2.2 * i for i in range(1, 15)]
+    c1 = c1[:25]
+    ks = [1000.0] * 5 + [1000.0] + [1000 + 4 * i for i in range(1, 6)] + [1020 + 2 * i for i in range(1, 15)]
+    kq = [700.0] * 25
+    c3 = [50.0] * 25
+    bars = {"000001.KS": bars_from(ds, c1), "000003.KQ": bars_from(ds, c3)}
+    idx = {"^KS11": list(zip(ds, ks[:25])), "^KQ11": list(zip(ds, kq))}
+    n = S.fill_outcomes(db.session, lambda syms: {s: bars[s] for s in syms if s in bars}, lambda sym: idx[sym])
+    assert n == 2
+    with db.session() as conn:
+        r = {x["code"]: x for x in conn.execute("SELECT * FROM screen_items")}
+    a = r["000001"]
+    assert a["fwd5"] == pytest.approx((c1[10] / c1[5] - 1) * 100, abs=0.01)
+    assert a["fwd5_ex"] == pytest.approx((c1[10] / c1[5] - 1) * 100 - (ks[10] / ks[5] - 1) * 100, abs=0.01)
+    assert a["fwd10_ex"] == pytest.approx((c1[15] / c1[5] - 1) * 100 - (ks[15] / ks[5] - 1) * 100, abs=0.01)
+    assert r["000003"]["fwd5"] == 0 and r["000003"]["fwd5_ex"] == 0                     # 코스닥 종목은 KOSDAQ 대비
+    assert S.fill_outcomes(db.session, lambda s: {}, lambda s: []) == 0               # 이미 채워진 것은 다시 받지 않는다
+
+
+def test_fill_skips_when_too_recent_or_data_missing():
+    today = date.today()
+    insert_run((today - timedelta(days=2)).strftime("%Y-%m-%d"), [("000001", "KS", "kept", {})])    # 아직 5일 안 지남
+    assert S.fill_outcomes(db.session, lambda s: 1 / 0, lambda s: 1 / 0) == 0                    # 조회 자체를 하지 않는다
+    ds = day_labels(today - timedelta(days=20), 8)
+    insert_run(ds[2], [("000002", "KS", "kept", {})])
+    short = bars_from(ds, [100.0] * 8)                                                          # 5일 뒤 데이터가 아직 없음(2+5=7 < 8 이므로 있음) → 10일은 없음
+    n = S.fill_outcomes(db.session, lambda syms: {s: short for s in syms}, lambda sym: list(zip(ds, [1000.0] * 8)))
+    with db.session() as conn:
+        r = conn.execute("SELECT fwd5, fwd10 FROM screen_items WHERE code='000002'").fetchone()
+    assert r["fwd5"] == 0 and r["fwd10"] is None and n >= 1                                      # 있는 것만 채우고 나머지는 대기
+
+
+def test_review_groups_by_type_and_flags_small_samples():
+    ai = lambda kind, tone=2, ck="지속성": dict(reason_type=kind, news_tone=tone, catalyst_kind=ck)  # noqa: E731
+    lead = lambda self_, ex5: dict(is_self=self_, ex5=ex5)  # noqa: E731
+    rid = insert_run("2026-11-02", [
+        ("000001", "KS", "kept", dict(ai=ai("실적·펀더멘털"), flags=["overheat"], leader=lead(False, 5.0))),
+        ("000002", "KS", "kept", dict(ai=ai("업황·테마", 0, "일회성"), leader=lead(False, -3.0))),
+        ("000003", "KQ", "nobg", dict(ai=ai("뚜렷한 배경 없음", 0, "불명"))),
+        ("000004", "KQ", "kept", {})])
+    with db.session() as conn:
+        for code, f5, e5, f10, e10 in (("000001", 8.0, 6.0, 12.0, 9.0), ("000002", -4.0, -5.0, None, None),
+                                       ("000003", -6.0, -7.0, -9.0, -8.0)):
+            conn.execute("UPDATE screen_items SET fwd5=?,fwd5_ex=?,fwd10=?,fwd10_ex=? WHERE run_id=? AND code=?", (f5, e5, f10, e10, rid, code))
+        rv = S.review(conn)
+    assert rv["n_items"] == 4 and rv["n_done"] == 3 and rv["n_pending"] == 1 and rv["n_runs"] == 1
+    g = {x["title"]: {i["label"]: i for i in x["items"]} for x in rv["groups"]}
+    assert g["추천 여부"]["추천(화면에 표시)"]["d5"]["n"] == 2 and g["추천 여부"]["AI가 배경 불명으로 제외"]["d5"]["mean"] == -7.0
+    assert g["강세 배경(AI)"]["실적·펀더멘털"]["d5"]["mean"] == 6.0 and g["강세 배경(AI)"]["실적·펀더멘털"]["d10"]["hit"] == 100
+    assert g["재료 성격(AI)"]["일회성"]["d10"]["n"] == 0                                       # 10일 값 없으면 표본 0
+    assert "대장주도 강세" in g["업종 대장주"] and "대장주는 지수 이하" in g["업종 대장주"]
+    assert "과열 표시 있음" in g["단기 과열 플래그"] and all(i["small"] for x in rv["groups"] for i in x["items"])   # 표본 30 미만
+
+
+def test_review_page_renders_with_and_without_data():
+    db.init_db()
+    with TestClient(main.app) as c:
+        html = c.get("/screener/review").text
+        assert "강세 종목 성과 검증" in html and "아직 결과가 없는 것이 정상" in html and "과적합" in html
+        assert "성과 검증 보기" in c.get("/screener").text
+    rid = insert_run("2026-11-02", [("000001", "KS", "kept", dict(ai=dict(reason_type="실적·펀더멘털", news_tone=1, catalyst_kind="지속성")))])
+    with db.session() as conn:
+        conn.execute("UPDATE screen_items SET fwd5=3.0,fwd5_ex=2.0 WHERE run_id=?", (rid,))
+    with TestClient(main.app) as c:
+        html = c.get("/screener/review").text
+        assert "표본 부족" in html and "+2.0%p" in html and "매도" not in html
+
+
+def test_review_counts_only_last_run_per_asof_date():
+    insert_run("2026-11-02", [("000001", "KS", "kept", {})])
+    rid2 = insert_run("2026-11-02", [("000001", "KS", "kept", {})])          # 같은 기준일 재실행
+    insert_run("2026-11-03", [("000001", "KS", "kept", {})])
+    with db.session() as conn:
+        conn.execute("UPDATE screen_items SET fwd5=1.0, fwd5_ex=1.0")
+        rv = S.review(conn)
+    assert rv["n_runs"] == 2 and rv["n_items"] == 2 and rv["overall"]["d5"]["n"] == 2

@@ -7,6 +7,7 @@
   뉴스로 강세의 배경을 확인할 수 없는("뚜렷한 배경 없음") 종목은 뺍니다.
   <b>이미 일어난 결과를 걸러 보여줄 뿐 앞으로의 상승을 예측하지 않으며</b>, 많이 오른 종목은 되돌림이 나오기도 합니다. 투자 권유가 아닙니다.</p>
 
+<p><a href="/screener/review" style="color:inherit">후보들의 실제 성과 검증 보기 →</a></p>
 <form method="post" action="/screener/refresh" style="margin:10px 0">
   <button type="submit">지금 스캔</button>
   <span class="mut">{% if last %}마지막 실행 {{ last.created_at | kst }}{% if last.status == 'failed' %} · <span class="down">실패</span>{% endif %}{% else %}아직 실행 전{% endif %}

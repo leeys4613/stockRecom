@@ -175,6 +175,11 @@ SCREEN_MCAP_DELAY_SEC = 0.15
 SCREEN_MCAP_CACHE_DAYS = 7
 SCREEN_OVERHEAT_R5 = 30.0          # 5일 상승률이 이 이상이면 "단기 과열" 표시(%)
 SCREEN_INDEX = {"KS": "^KS11", "KQ": "^KQ11"}
+# 과거 유사 국면/신호 백테스트 (/analog)
+ANALOG_SYMBOLS = {"KOSPI": "^KS11", "VIX": "^VIX"}
+ANALOG_START = "2000-01-01"        # 이 날짜 이후만 사용(초기 데이터 품질 보수적으로 제외)
+ANALOG_K = 12                      # 가장 비슷했던 과거 구간(에피소드) 수
+ANALOG_SEP_DAYS = 10               # 같은 에피소드로 보는 최소 간격(거래일)
 WATCHLIST_MAX = 50
 REPORTS_SCHEDULE = (16, 40)      # 거래일 장 마감 후 하루 1회 스냅샷
 PICK_TOP_N = 5

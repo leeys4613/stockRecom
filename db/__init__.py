@@ -159,9 +159,17 @@ CREATE TABLE IF NOT EXISTS screen_items (
     value20 REAL, mcap REAL, vol_ratio REAL, flags TEXT,
     ai TEXT,                -- JSON: 뉴스 기반 강세 배경·톤·리스크 (2단계)
     leader TEXT,            -- JSON: 같은 업종의 대장주(시가총액 1위)와 최근 성과
+    status TEXT NOT NULL DEFAULT 'kept',   -- kept(추천) / nobg(AI가 배경 불명으로 제외) / cut(순위권 밖) — 제외분도 성과 비교용으로 기록
+    fwd5 REAL, fwd5_ex REAL, fwd10 REAL, fwd10_ex REAL,   -- 기준일 종가 대비 5·10거래일 뒤 수익률(%)과 소속 지수 대비 초과수익(%p)
+    fwd_at TEXT,
     PRIMARY KEY (run_id, code)
 );
 CREATE TABLE IF NOT EXISTS mcap_cache (code TEXT PRIMARY KEY, mcap REAL NOT NULL, fetched_at TEXT NOT NULL);
+
+-- 장기 일봉 캐시 (과거 유사 국면 분석용: KOSPI, VIX)
+CREATE TABLE IF NOT EXISTS price_history (
+    symbol TEXT NOT NULL, date TEXT NOT NULL, close REAL NOT NULL, PRIMARY KEY (symbol, date)
+);
 
 -- 증권사 컨센서스 일별 스냅샷 (목표가 추이를 직접 계산하기 위해 계속 쌓는다)
 CREATE TABLE IF NOT EXISTS consensus_snapshots (
@@ -215,6 +223,10 @@ def _migrate(conn):
     si_cols = [r["name"] for r in conn.execute("PRAGMA table_info(screen_items)")]
     if "leader" not in si_cols:
         conn.execute("ALTER TABLE screen_items ADD COLUMN leader TEXT")
+    for col, typ in (("status", "TEXT NOT NULL DEFAULT 'kept'"), ("fwd5", "REAL"), ("fwd5_ex", "REAL"), ("fwd10", "REAL"),
+                     ("fwd10_ex", "REAL"), ("fwd_at", "TEXT")):
+        if col not in si_cols:
+            conn.execute(f"ALTER TABLE screen_items ADD COLUMN {col} {typ}")
     ws_cols = [r["name"] for r in conn.execute("PRAGMA table_info(weight_sets)")]
     if "policy" not in ws_cols:
         conn.execute("ALTER TABLE weight_sets ADD COLUMN policy TEXT")

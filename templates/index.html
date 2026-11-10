@@ -57,6 +57,7 @@
         <summary class="mut" style="cursor:pointer;text-align:center">공포·환희 신호 <b class="{{ 'down' if fg.net >= 3 else 'up' if fg.net <= -3 else '' }}">{{ fg.label }}</b> (역발상 참고 · 점수와 별개)</summary>
         {% if fg.factors %}<ul class="lines">{% for f in fg.factors %}<li>{{ f.text }} <span class="mut">→ {{ ' 공포 쪽' if f.points > 0 else '환희 쪽' }} {{ "{:+d}".format(f.points) }}</span></li>{% endfor %}</ul>
         {% else %}<div class="mut" style="margin-top:6px">공포·환희 어느 쪽 조건에도 해당하지 않는 보통 구간입니다.</div>{% endif %}
+        <div class="mut" style="margin-top:6px"><a href="/analog" style="color:inherit">과거 데이터로 이 신호가 의미 있었는지 보기 →</a></div>
         <div class="mut" style="margin-top:6px">합계 {{ "{:+d}".format(fg.net) }} (공포 +, 환희 −). +3 이상 공포, +5 이상 공포 과열, -3 이하 낙관, -5 이하 환희 과열.
           매수 가능성 점수는 추세를 따라가 공포 구간에서 낮게 나오므로, "공포에 사고 환희에 판다"는 관점을 따로 볼 수 있게 한 보조 신호입니다.
           임계값은 경험적 어림값이며 <b>아직 검증되지 않았고</b> 투자 권유가 아닙니다.</div>
