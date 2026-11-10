@@ -195,6 +195,9 @@ CREATE TABLE IF NOT EXISTS event_alerts_sent (
     event_id INTEGER NOT NULL, days_before INTEGER NOT NULL, sent_at TEXT NOT NULL, PRIMARY KEY (event_id, days_before)
 );
 
+-- 매크로 지표 차트 캐시: 심볼별 마지막으로 받은 시각 (일봉 자체는 price_history 에 저장)
+CREATE TABLE IF NOT EXISTS chart_fetch (symbol TEXT PRIMARY KEY, fetched_at TEXT NOT NULL);
+
 -- 증권사 컨센서스 일별 스냅샷 (목표가 추이를 직접 계산하기 위해 계속 쌓는다)
 CREATE TABLE IF NOT EXISTS consensus_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

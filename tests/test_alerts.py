@@ -183,3 +183,8 @@ def test_app_name_and_icons_match_manifest():
         assert f"{w}x{h}" == icon["sizes"]
     data = (root / "apple-touch-icon.png").read_bytes()
     assert struct.unpack(">II", data[16:24]) == (180, 180)
+
+
+def test_manifest_is_not_cached_so_renames_apply():
+    with TestClient(main.app) as c:
+        assert c.get("/manifest.webmanifest").headers["cache-control"] == "no-cache"

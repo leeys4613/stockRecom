@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import alerts
+import charts
 import events as events_mod
 import analog
 import history
@@ -117,6 +118,18 @@ def screener_refresh(background: BackgroundTasks):
     return RedirectResponse("/screener", status_code=303)
 
 
+@app.get("/market/chart/{key}")
+def market_chart(key: str, days: int = 90, interval: str = "1d"):
+    if interval not in charts.INTERVALS or days not in charts.INTERVALS[interval]:
+        return JSONResponse({"error": "선택할 수 없는 간격/기간입니다"}, status_code=400, headers={"Cache-Control": "no-store"})
+    try:
+        data = charts.series(db.session, key, days, interval)
+    except charts.ChartError as e:
+        return JSONResponse({"error": str(e)}, status_code=404 if not charts.chartable(key) else 422 if "일봉만" in str(e) else 502,
+                            headers={"Cache-Control": "no-store"})
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/analog")
 def analog_page(request: Request):
     with db.session() as conn:
@@ -177,7 +190,8 @@ def tracker_page(request: Request):
 @app.get("/market")
 def market_page(request: Request):
     with db.session() as conn:
-        ctx = dict(active="market", rows=macro.latest(conn), news=news.latest(conn))
+        ctx = dict(active="market", rows=macro.latest(conn), news=news.latest(conn),
+                   chartable={k for k in config.MACRO_INDICATORS if charts.chartable(k)}, daily_only=set(charts.DERIVED))
     return templates.TemplateResponse(request, "market.html", ctx)
 
 
@@ -392,7 +406,9 @@ def push_test():
 
 @app.get("/manifest.webmanifest")
 def manifest():
-    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+    # 이름·아이콘을 바꿀 때 브라우저가 옛 매니페스트를 오래 들고 있지 않도록 매번 다시 확인하게 한다
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json",
+                        headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/sw.js")

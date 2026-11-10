@@ -1,11 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>매크로 지표</h2>
+<style>
+  #macro tr.chartable { cursor:pointer; }
+  #macro tr.chartable td:first-child::after { content:" ▾"; color:var(--mut); font-size:12px; }
+  #macro tr.chartable.open td:first-child::after { content:" ▴"; }
+  #macro tr.chart-row td { padding:6px 0 12px; border-bottom:1px solid var(--bd); text-align:left; }
+  .chart-tabs { display:flex; gap:6px; margin:0 0 6px; flex-wrap:wrap; }
+  .chart-tabs button { padding:5px 12px; font-size:13px; }
+  .chart-tabs button[aria-pressed="true"] { font-weight:700; border:2px solid currentColor; }
+  .chart-box svg { width:100%; height:auto; display:block; touch-action:pan-y; }
+  .chart-sum { font-size:13px; margin-top:4px; }
+</style>
+<div class="mut" style="margin-bottom:6px">차트가 있는 지표(▾)는 눌러서 분봉(5분)·일봉·주봉 차트를 볼 수 있습니다. 파생 지표(KOSPI 10일 변화 등)는 일봉만 제공합니다.</div>
 <table id="macro">
   <thead><tr><th>지표</th><th>현재값</th><th>전일비</th><th>상태</th></tr></thead>
   <tbody>
   {% for r in rows %}
-  <tr data-key="{{ r.key }}">
+  <tr data-key="{{ r.key }}"{% if r.key in chartable %} class="chartable" data-chart="1" role="button" tabindex="0" aria-expanded="false"{% if r.key in daily_only %} data-daily="1"{% endif %}{% endif %}>
     <td>{{ r.name }}</td>
     <td>{% if r.value is not none %}{% if r.kind == 'feature' and r.unit == '%' %}{{ "{:+.2f}".format(r.value) }}%{% else %}{{ "{:,.2f}".format(r.value) }}{% endif %}{% else %}-{% endif %}</td>
     <td class="{% if r.change_pct is not none %}{{ 'up' if r.change_pct >= 0 else 'down' }}{% endif %}">
@@ -18,6 +30,116 @@
   {% endfor %}
   </tbody>
 </table>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', RANGES = [[30, '1개월'], [90, '3개월'], [365, '1년']];
+  var UP = '#d33', DOWN = '#36c', cache = {};
+  function fmt(v, unit) {
+    var a = Math.abs(v), d = a >= 1000 ? 0 : a >= 100 ? 1 : 2;
+    var s = v.toLocaleString('ko-KR', { minimumFractionDigits: 0, maximumFractionDigits: d });
+    return unit === '%' ? (v >= 0 ? '+' : '') + v.toFixed(2) + '%' : s;
+  }
+  function el(tag, attrs, text) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function draw(box, d) {
+    box.textContent = '';
+    var W = 320, H = 170, L = 8, R = 8, T = 14, B = 22, pts = d.points, n = pts.length;
+    var lo = d.low, hi = d.high, pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.01 || 1;
+    lo -= pad; hi += pad;
+    var X = function (i) { return L + (W - L - R) * (n === 1 ? 0.5 : i / (n - 1)); };
+    var Y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
+    var up = d.last >= d.first, color = up ? UP : DOWN;
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': d.name + ' 추이 차트' });
+    [d.high, d.low].forEach(function (v) {
+      svg.appendChild(el('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: 'currentColor', 'stroke-opacity': '.25', 'stroke-dasharray': '3 4' }));
+      svg.appendChild(el('text', { x: W - R, y: Y(v) - 3, 'text-anchor': 'end', 'font-size': '10', fill: 'currentColor', 'fill-opacity': '.7' }, fmt(v, d.unit)));
+    });
+    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p[1]).toFixed(1); }).join(' ');
+    svg.appendChild(el('path', { d: line + ' L' + X(n - 1).toFixed(1) + ' ' + (H - B) + ' L' + X(0).toFixed(1) + ' ' + (H - B) + ' Z', fill: color, 'fill-opacity': '.10' }));
+    svg.appendChild(el('path', { d: line, fill: 'none', stroke: color, 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    svg.appendChild(el('text', { x: L, y: H - 6, 'font-size': '10', fill: 'currentColor', 'fill-opacity': '.7' }, pts[0][0]));
+    svg.appendChild(el('text', { x: W - R, y: H - 6, 'text-anchor': 'end', 'font-size': '10', fill: 'currentColor', 'fill-opacity': '.7' }, pts[n - 1][0]));
+    var dot = el('circle', { r: 4, fill: color, visibility: 'hidden' }), tip = el('text', { 'font-size': '11', 'font-weight': '700', fill: 'currentColor', visibility: 'hidden' });
+    svg.appendChild(dot); svg.appendChild(tip);
+    function move(ev) {
+      var r = svg.getBoundingClientRect(), x = (ev.clientX - r.left) / r.width * W;
+      var i = Math.max(0, Math.min(n - 1, Math.round((x - L) / (W - L - R) * (n - 1))));
+      dot.setAttribute('cx', X(i)); dot.setAttribute('cy', Y(pts[i][1])); dot.setAttribute('visibility', 'visible');
+      tip.textContent = pts[i][0] + '  ' + fmt(pts[i][1], d.unit);
+      tip.setAttribute('x', Math.min(W - 150, Math.max(L, X(i) - 60))); tip.setAttribute('y', 11); tip.setAttribute('visibility', 'visible');
+    }
+    svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move);
+    svg.addEventListener('pointerleave', function () { dot.setAttribute('visibility', 'hidden'); tip.setAttribute('visibility', 'hidden'); });
+    box.appendChild(svg);
+    var sum = document.createElement('div'); sum.className = 'chart-sum mut';
+    var chg = d.unit === '%' ? '변화 ' + (d.diff >= 0 ? '+' : '') + d.diff.toFixed(2) + '%p' : (d.chg == null ? '' : '기간 변화 ' + (d.chg >= 0 ? '+' : '') + d.chg.toFixed(1) + '%');
+    sum.textContent = '현재 ' + fmt(d.last, d.unit) + ' · 최고 ' + fmt(d.high, d.unit) + ' · 최저 ' + fmt(d.low, d.unit) + (chg ? ' · ' + chg : '') + ' · 기준일 ' + d.as_of;
+    box.appendChild(sum);
+    if (d.note) { var nt = document.createElement('div'); nt.className = 'chart-sum mut'; nt.textContent = d.note; box.appendChild(nt); }
+    if (d.stale) { var w = document.createElement('div'); w.className = 'chart-sum warn'; w.textContent = '최신 데이터를 받지 못해 저장된 데이터로 그렸습니다.'; box.appendChild(w); }
+  }
+  var KINDS = [['5m', '분봉(5분)'], ['1d', '일봉'], ['1wk', '주봉']];
+  var SETS = { '5m': [[1, '1일'], [5, '5일']], '1d': [[30, '1개월'], [90, '3개월'], [365, '1년']], '1wk': [[365, '1년'], [1095, '3년'], [1825, '5년']] };
+  var DEFAULT = { '5m': 1, '1d': 90, '1wk': 1095 };
+  function load(key, interval, days, box) {
+    var ck = key + ':' + interval + ':' + days;
+    box.textContent = '불러오는 중…';
+    if (cache[ck]) { draw(box, cache[ck]); return; }
+    fetch('/market/chart/' + encodeURIComponent(key) + '?interval=' + interval + '&days=' + days, { cache: 'no-store' })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || '불러오지 못했습니다'); return j; }); })
+      .then(function (j) { cache[ck] = j; draw(box, j); })
+      .catch(function (e) { box.textContent = '차트를 불러오지 못했습니다: ' + (e.message || '오류'); });
+  }
+  function pressed(group, btn) {
+    Array.prototype.forEach.call(group.children, function (x) { x.setAttribute('aria-pressed', 'false'); });
+    btn.setAttribute('aria-pressed', 'true');
+  }
+  function toggle(tr) {
+    var next = tr.nextElementSibling;
+    if (next && next.classList.contains('chart-row')) {            // 이미 펼쳐져 있으면 접는다
+      next.remove(); tr.classList.remove('open'); tr.setAttribute('aria-expanded', 'false'); return;
+    }
+    var key = tr.dataset.key, dailyOnly = tr.dataset.daily === '1', state = { interval: '1d', days: 90 };
+    var row = document.createElement('tr'), td = document.createElement('td');
+    row.className = 'chart-row'; td.colSpan = 4;
+    var kinds = document.createElement('div'); kinds.className = 'chart-tabs';
+    var ranges = document.createElement('div'); ranges.className = 'chart-tabs';
+    var box = document.createElement('div'); box.className = 'chart-box';
+    function buildRanges() {
+      ranges.textContent = '';
+      SETS[state.interval].forEach(function (r) {
+        var b = document.createElement('button'); b.type = 'button'; b.textContent = r[1];
+        b.setAttribute('aria-pressed', r[0] === state.days ? 'true' : 'false');
+        b.addEventListener('click', function (e) { e.stopPropagation(); state.days = r[0]; pressed(ranges, b); load(key, state.interval, state.days, box); });
+        ranges.appendChild(b);
+      });
+    }
+    KINDS.forEach(function (k) {
+      if (dailyOnly && k[0] !== '1d') return;                       // 10거래일 기준 파생 지표는 일봉만
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = k[1];
+      b.setAttribute('aria-pressed', k[0] === state.interval ? 'true' : 'false');
+      b.addEventListener('click', function (e) {
+        e.stopPropagation(); state.interval = k[0]; state.days = DEFAULT[k[0]]; pressed(kinds, b); buildRanges(); load(key, state.interval, state.days, box);
+      });
+      kinds.appendChild(b);
+    });
+    buildRanges();
+    td.appendChild(kinds); td.appendChild(ranges); td.appendChild(box); row.appendChild(td);
+    tr.parentNode.insertBefore(row, tr.nextSibling);
+    tr.classList.add('open'); tr.setAttribute('aria-expanded', 'true');
+    load(key, state.interval, state.days, box);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#macro tr[data-chart]'), function (tr) {
+    tr.addEventListener('click', function () { toggle(tr); });
+    tr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(tr); } });
+  });
+})();
+</script>
 
 <h2>뉴스 헤드라인</h2>
 <section id="news">
