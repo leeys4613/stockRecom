@@ -12,6 +12,7 @@ import config
 import db
 import alerts
 import allocations
+import events
 import gauge
 import history
 import performance
@@ -314,6 +315,23 @@ def scheduled_screen_job():
     rid = screener.run(db.session)
     try:    # 과거 비교용 장기 일봉도 같이 갱신한다(실패해도 스캔 결과에는 영향 없음)
         history.refresh(db.session)
+    except Exception:
+        pass
+    return rid
+
+
+def scheduled_events_job():
+    """아침 이벤트 갱신(거래일만) + 이벤트 임박 알림 확인(매일, DB만 사용)."""
+    rid = None
+    if calendar_kr.is_trading_day(calendar_kr.today_kst()):
+        try:
+            events.fill_outcomes(db.session)
+        except Exception:
+            pass
+        rid = events.run(db.session)
+    try:
+        with db.session() as conn:
+            events.check_alerts(conn)
     except Exception:
         pass
     return rid

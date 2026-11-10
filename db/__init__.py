@@ -172,6 +172,29 @@ CREATE TABLE IF NOT EXISTS price_history (
     symbol TEXT NOT NULL, date TEXT NOT NULL, close REAL NOT NULL, PRIMARY KEY (symbol, date)
 );
 
+-- 이벤트 캘린더: 뉴스에서 추출한 예정 이벤트와 AI 파괴력 판단, 이후 실제 주가 반응(셀온 검증용)
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ukey TEXT UNIQUE NOT NULL,
+    code TEXT NOT NULL, name TEXT NOT NULL, market TEXT NOT NULL,
+    event_type TEXT NOT NULL, title TEXT NOT NULL,
+    date TEXT,              -- YYYY-MM-DD (기사에서 확인된 경우만), 없으면 일정 미확정
+    date_note TEXT,
+    impact INTEGER NOT NULL, direction TEXT NOT NULL, priced_in INTEGER NOT NULL,
+    reason TEXT, evidence TEXT,   -- evidence: 근거 헤드라인(글자 그대로, 코드가 검증)
+    flags TEXT,                   -- JSON: sell_news_risk 등 (코드가 계산)
+    first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+    price_seen REAL, r10_seen REAL,
+    pre_ret REAL, post_ret REAL, post_at TEXT   -- 이벤트 전날까지(처음 본 날 대비)와 이벤트 후 3거래일 실제 수익률(%)
+);
+CREATE TABLE IF NOT EXISTS event_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ok','failed')), error TEXT, n_stocks INTEGER, n_events INTEGER
+);
+CREATE TABLE IF NOT EXISTS event_alerts_sent (
+    event_id INTEGER NOT NULL, days_before INTEGER NOT NULL, sent_at TEXT NOT NULL, PRIMARY KEY (event_id, days_before)
+);
+
 -- 증권사 컨센서스 일별 스냅샷 (목표가 추이를 직접 계산하기 위해 계속 쌓는다)
 CREATE TABLE IF NOT EXISTS consensus_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

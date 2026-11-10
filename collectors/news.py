@@ -68,6 +68,24 @@ def parse_items(content, limit, max_age_days=None, now=None):
     return [i for _, i in items[:limit]]
 
 
+def stock_event_headlines(name, fetcher=None):
+    """종목의 '예정 이벤트' 관련 최근 헤드라인 [{date(KST, YYYY-MM-DD), title}]. 실패하면 예외."""
+    from email.utils import parsedate_to_datetime
+    from zoneinfo import ZoneInfo
+
+    q = (f'"{name}" (예정 OR 발표 OR 임상 OR 승인 OR 허가 OR 실적 OR 편입 OR 상장 OR 주주총회 OR 출시 OR 공개매수 OR 계약 OR 보호예수) '
+         f'when:{config.EVENT_NEWS_AGE_DAYS}d')
+    content = (fetcher or http_fetch)(RSS_URL.format(q=quote(q), locale=DEFAULT_LOCALE))
+    out = []
+    for i in parse_items(content, config.EVENT_HEADLINES, config.EVENT_NEWS_AGE_DAYS):
+        try:
+            d = parsedate_to_datetime(i["published"]).astimezone(ZoneInfo(config.TIMEZONE)).strftime("%Y-%m-%d")
+        except Exception:
+            d = ""
+        out.append(dict(date=d, title=i["title"]))
+    return out
+
+
 def collect_one(topic, fetcher=http_fetch):
     _, query = config.NEWS_TOPICS[topic]
     max_age = config.NEWS_MAX_AGE_DAYS.get(topic, config.NEWS_DEFAULT_MAX_AGE_DAYS)

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import alerts
+import events as events_mod
 import analog
 import history
 import allocations
@@ -54,6 +55,8 @@ def build_scheduler():
     sched.add_job(pipeline.scheduled_screen_job,
                   CronTrigger(hour=config.SCREEN_SCHEDULE[0], minute=config.SCREEN_SCHEDULE[1]),
                   id="screen-daily", coalesce=True, max_instances=1, misfire_grace_time=3600)
+    sched.add_job(pipeline.scheduled_events_job, CronTrigger(hour=config.EVENT_SCHEDULE[0], minute=config.EVENT_SCHEDULE[1]),
+                  id="events-daily", coalesce=True, max_instances=1, misfire_grace_time=3600)
     return sched
 
 
@@ -145,6 +148,25 @@ def analog_page(request: Request):
 def analog_refresh(background: BackgroundTasks):
     background.add_task(history.refresh, db.session)
     return RedirectResponse("/analog", status_code=303)
+
+
+@app.get("/events")
+def events_page(request: Request):
+    with db.session() as conn:
+        ctx = dict(active="events", ev=events_mod.view(conn), types=config.EVENT_TYPES, cfg=config)
+    return templates.TemplateResponse(request, "events.html", ctx)
+
+
+def _events_refresh_job():
+    events_mod.run(db.session)
+    with db.session() as conn:
+        events_mod.check_alerts(conn)
+
+
+@app.post("/events/refresh")
+def events_refresh(background: BackgroundTasks):
+    background.add_task(_events_refresh_job)
+    return RedirectResponse("/events", status_code=303)
 
 
 @app.get("/tracker")

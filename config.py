@@ -182,6 +182,17 @@ ANALOG_SYMBOLS = {"KOSPI": "^KS11", "VIX": "^VIX"}
 ANALOG_START = "2000-01-01"        # 이 날짜 이후만 사용(초기 데이터 품질 보수적으로 제외)
 ANALOG_K = 12                      # 가장 비슷했던 과거 구간(에피소드) 수
 ANALOG_SEP_DAYS = 10               # 같은 에피소드로 보는 최소 간격(거래일)
+# 이벤트 캘린더 (뉴스에서 예정 이벤트를 추출하고 AI가 파괴력을 판단)
+EVENT_SCHEDULE = (8, 20)           # 거래일 아침 갱신 (알림 확인은 매일)
+EVENT_MAX_STOCKS = 40              # 관심종목 + 강세 종목 중 조회할 최대 종목 수
+EVENT_NEWS_AGE_DAYS = 14
+EVENT_HEADLINES = 10
+EVENT_MAX_DAYS = 120               # 오늘부터 이 기간 안의 날짜만 일정으로 인정
+EVENT_TYPES = ["실적발표", "임상·허가", "신제품·계약", "지수편입·정기변경", "주총·배당", "유증·보호예수·지분", "정책·규제", "기타"]
+EVENT_ALERT_DAYS = (3, 1)          # 이벤트 며칠 전에 알릴지(관심종목 + 파괴력 큼 이상)
+EVENT_ALERT_MIN_IMPACT = 2
+EVENT_RUNUP_PCT = 10.0             # 10일 상승률이 이 이상이면 호재 이벤트의 "선반영/셀온 가능성" 표시
+EVENT_BIG_MOVE_PCT = 8.0           # 과거 1년 중 하루 변동이 이 이상인 날을 "큰 변동일"로 센다
 WATCHLIST_MAX = 50
 REPORTS_SCHEDULE = (16, 40)      # 거래일 장 마감 후 하루 1회 스냅샷
 PICK_TOP_N = 5
