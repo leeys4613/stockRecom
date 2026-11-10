@@ -296,7 +296,7 @@ def test_upload_route_success_and_errors():
 def test_service_worker_bypasses_search_endpoint():
     with client() as c:
         sw = c.get("/sw.js").text
-    assert "/watchlist/search" in sw and "kms-v6" in sw
+    assert "/watchlist/search" in sw and "kms-v7" in sw
 
 
 def test_seed_topup_adds_new_seed_stocks_but_not_over_uploaded_list():
