@@ -20,6 +20,7 @@ from analyzer import llm, stock_llm
 from collectors import ai_tracker, macro, news, reports
 from scoring import engine, picks
 from scoring import policy as policy_mod
+from scoring import levels, sentiment
 from scoring import stock_view
 
 _lock = threading.Lock()
@@ -159,6 +160,13 @@ def algorithm_info(wset, aset, scored):
     }
 
 
+def fear_greed_signal(macro_rows):
+    """최신(fresh) 지표로 공포·환희 보조 신호를 계산한다. 점수·LLM 입력에는 쓰지 않는다."""
+    v = {r["key"]: r["value"] for r in macro_rows if r["freshness"] == "fresh" and r["value"] is not None}
+    return sentiment.assess(vix=v.get("VIX"), vix_avg=v.get("VIXAVG"), kospi_10d=v.get("KOSPI10D"),
+                            kospi_dd=v.get("KOSPIDD"))
+
+
 def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetcher=None, history_fetcher=None,
              capex_fetcher=None):
     """한 번의 종합 분석. 이미 실행 중이면 None. 성공 시 저장된 analyses.id."""
@@ -209,11 +217,12 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
             final = round(_clamp(base + policy_mod.total(pol) + adj, 0, 100), 1)
 
         a = result["analysis"]
+        fg = fear_greed_signal(macro_rows)
         with db.session() as conn:
             cur = conn.execute(
                 "INSERT INTO analyses (created_at,llm_status,provider,base_score,adjustment,"
                 "final_score,coverage,missing,summary,risk_comment,error,inputs,weight_set_id,"
-                "allocation_set_id,policy_us,policy_kr,policy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "allocation_set_id,policy_us,policy_kr,policy,fear_greed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (datetime.now(timezone.utc).isoformat(timespec="seconds"),
                  result["status"], result["provider"], base, adj, final, scored["coverage"],
                  json.dumps(scored["missing"]),
@@ -222,7 +231,8 @@ def run_once(provider=None, macro_fetcher=None, news_fetcher=None, closes_fetche
                  json.dumps(ctx, ensure_ascii=False),
                  wset["id"], aset["id"],
                  pol["us"]["points"] if pol else None, pol["kr"]["points"] if pol else None,
-                 json.dumps(pol, ensure_ascii=False) if pol else None))
+                 json.dumps(pol, ensure_ascii=False) if pol else None,
+                 json.dumps(fg, ensure_ascii=False) if fg else None))
             analysis_id = cur.lastrowid
         _fill_outcomes_best_effort(closes_fetcher)
         _stock_views_best_effort(provider, history_fetcher)
@@ -248,6 +258,8 @@ def latest_analysis(conn):
     d["missing"] = json.loads(d["missing"]) if d["missing"] else []
     d["summary"] = json.loads(d["summary"]) if d["summary"] else []
     d["policy"] = json.loads(d["policy"]) if d.get("policy") else None
+    d["fear_greed"] = json.loads(d["fear_greed"]) if d.get("fear_greed") else None
+    d["fg_divergence"] = sentiment.divergence(d["fear_greed"], d["final_score"])
     d["policy_total"] = policy_mod.total(d["policy"]) if d["policy"] else 0.0
     ws = weights_mod.get(conn, d.get("weight_set_id")) if d.get("weight_set_id") else None
     d["weight_label"] = ws["label"] if ws else None
@@ -296,7 +308,7 @@ def scheduled_reports_job():
 _stock_lock = threading.Lock()
 
 
-def _stock_inputs(item, history_fetcher, headline_fetcher, industry_fetcher):
+def _stock_inputs(item, history_fetcher, headline_fetcher, industry_fetcher, ohlcv_fetcher=None):
     """종목 하나의 판정 입력: 가격 지표, 최근 헤드라인, 소속 테마 그룹. 일부가 실패해도 나머지는 계속한다."""
     from collectors import macro
 
@@ -307,6 +319,11 @@ def _stock_inputs(item, history_fetcher, headline_fetcher, industry_fetcher):
         out["price"] = dict(price=round(price, 2), chg1d=round(c1, 1), chg10d=round(c10, 1), dd60=round(dd, 1))
     except Exception as e:
         out["errors"].append(f"가격 이력: {type(e).__name__}: {e}"[:120])
+    try:   # 지지·저항은 숫자를 코드가 계산한다. 실패해도 나머지 판정에는 영향이 없다
+        out["levels"] = levels.compute((ohlcv_fetcher or macro.yf_ohlcv)(sym))
+    except Exception as e:
+        out["levels"] = None
+        out["errors"].append(f"일봉/지지저항: {type(e).__name__}: {e}"[:120])
     try:
         out["titles"] = news.stock_headlines(item["name"], headline_fetcher)
     except Exception as e:
@@ -335,7 +352,8 @@ def _market_context(conn, tview):
                         construction_reading=tview["build_reading"]))
 
 
-def run_stock_views(provider=None, history_fetcher=None, headline_fetcher=None, industry_fetcher=None, force=False, only=None):
+def run_stock_views(provider=None, history_fetcher=None, headline_fetcher=None, industry_fetcher=None, force=False, only=None,
+                    ohlcv_fetcher=None):
     """관심종목의 대중심리·주도섹터 적합도를 판정해 저장한다. 반환: 저장한 종목 수, 건너뛰면 None(실행 중/최소 간격 이내)."""
     if not _stock_lock.acquire(blocking=False):
         return None
@@ -358,7 +376,7 @@ def run_stock_views(provider=None, history_fetcher=None, headline_fetcher=None, 
         for i, it in enumerate(items):
             if i and config.STOCK_VIEW_DELAY_SEC:
                 time.sleep(config.STOCK_VIEW_DELAY_SEC)
-            inputs.append(_stock_inputs(it, history_fetcher, headline_fetcher, industry_fetcher))
+            inputs.append(_stock_inputs(it, history_fetcher, headline_fetcher, industry_fetcher, ohlcv_fetcher))
         ctx = dict(
             market=market, kospi=dict(chg10d=None if "KOSPI10D" not in kospi else round(kospi["KOSPI10D"], 1),
                                       dd10=None if "KOSPIDD" not in kospi else round(kospi["KOSPIDD"], 1)),
@@ -374,7 +392,7 @@ def run_stock_views(provider=None, history_fetcher=None, headline_fetcher=None, 
             result = dict(status="failed", items={}, error=f"{type(e).__name__}: {e}"[:300])
         out = []
         for x in inputs:
-            metrics = dict(x["price"] or {}, headlines=len(x["titles"]), errors=x["errors"])
+            metrics = dict(x["price"] or {}, headlines=len(x["titles"]), errors=x["errors"], levels=x.get("levels"))
             raw = result["items"].get(x["code"])
             if result["status"] != "ok" or raw is None:
                 out.append(stockviews.make_row(x["code"], analysis_id, groups=x["groups"], metrics=metrics,

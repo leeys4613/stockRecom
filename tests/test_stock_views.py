@@ -290,7 +290,7 @@ def test_headline_and_price_failures_are_isolated_and_recorded():
     with db.session() as conn:
         _, v = stockviews.latest(conn, "005930")
     assert v["crowd_effect"] == 0 and "기사가 없어" in v["crowd_note"]                          # 기사 없이는 심리를 반영하지 않는다
-    assert v["sector_effect"] == 2 and len(v["metrics"]["errors"]) == 2 and v["metrics"].get("price") is None
+    assert v["sector_effect"] == 2 and len(v["metrics"]["errors"]) == 3 and v["metrics"].get("price") is None   # 가격·일봉·뉴스
 
 
 def test_unmapped_stock_uses_yahoo_industry_then_falls_back_to_neutral():

@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS analyses (
     allocation_set_id INTEGER REFERENCES allocation_sets(id),
     policy_us REAL,      -- 미국 정책 반영 점수
     policy_kr REAL,      -- 한국 증시 부양정책 반영 점수
-    policy TEXT          -- JSON: 단계/근거 헤드라인
+    policy TEXT,         -- JSON: 단계/근거 헤드라인
+    fear_greed TEXT      -- JSON: 공포·환희 보조 신호 (역발상 참고, 점수와 별개)
 );
 
 -- AI 투자 사이클 트래커: 빅테크/반도체/데이터센터/메모리 프록시 종목의 가격 스냅샷
@@ -179,7 +180,7 @@ def _migrate(conn):
     if "policy" not in ws_cols:
         conn.execute("ALTER TABLE weight_sets ADD COLUMN policy TEXT")
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(analyses)")]
-    for col, typ in (("policy_us", "REAL"), ("policy_kr", "REAL"), ("policy", "TEXT")):
+    for col, typ in (("policy_us", "REAL"), ("policy_kr", "REAL"), ("policy", "TEXT"), ("fear_greed", "TEXT")):
         if col not in cols:
             conn.execute(f"ALTER TABLE analyses ADD COLUMN {col} {typ}")
     if "weight_set_id" not in cols:

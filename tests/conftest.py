@@ -33,6 +33,9 @@ def isolated(tmp_path, monkeypatch):
     def no_push(sub, payload, pem):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(alerts, "send_push", no_push)                # 실제 푸시 발송 차단
+    def no_ohlcv(symbol, period=None):
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(macro, "yf_ohlcv", no_ohlcv)                 # 일봉 조회 차단 (지지·저항은 테스트에서 직접 주입)
     monkeypatch.setattr(reports, "yf_industry", lambda sym: None)    # Yahoo 업종 조회 차단
     monkeypatch.setattr(macro, "yf_closes", lambda symbol, period="2mo": flat_closes(start=20.0 if symbol == "^VIX" else 5000.0))
 

@@ -41,6 +41,16 @@ def yf_closes(symbol, period="4mo"):
     return [float(x) for x in closes]
 
 
+def yf_ohlcv(symbol, period=None):
+    """일봉 OHLCV 목록(오름차순). 지지·저항 계산용."""
+    import yfinance as yf
+
+    df = yf.Ticker(symbol).history(period=period or config.LEVELS_PERIOD, interval="1d")
+    df = df[["High", "Low", "Close", "Volume"]].dropna()
+    return [dict(high=float(h), low=float(l), close=float(c), volume=float(v))
+            for h, l, c, v in zip(df["High"], df["Low"], df["Close"], df["Volume"])]
+
+
 def kospi_features(closes, days=None):
     """KOSPI 종가 -> (days 거래일 변화율 %, days 일 고점 대비 %). 데이터가 부족하면 예외."""
     days = days or config.TREND_DAYS

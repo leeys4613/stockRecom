@@ -155,6 +155,11 @@ SIGNAL_YELLOW = 40
 # 네이버 증권·한경컨센서스는 robots.txt 가 전체 자동 수집을 금지(Disallow: /)하므로 사용하지 않는다.
 REPORTS_DELAY_SEC = 0.6          # 종목 간 조회 간격 (예의상 요청 속도 제한)
 ALERT_DEFAULT_MIN = 70   # 종목별 알림 기준 점수 기본값
+LEVELS_PERIOD = "8mo"        # 지지·저항 계산에 쓰는 일봉 기간
+LEVELS_PIVOT_K = 5           # 스윙 고점/저점 판정: 앞뒤 5거래일
+LEVELS_CLUSTER_TOL = 0.015   # 이 비율 이내의 가격은 한 가격대로 묶는다
+LEVELS_MIN_BARS = 60
+LEVELS_VOL_NODE_SHARE = 0.15  # 가격대 ±tol 의 거래량이 전체의 15% 이상이면 "거래량 집중"
 WATCHLIST_MAX = 50
 REPORTS_SCHEDULE = (16, 40)      # 거래일 장 마감 후 하루 1회 스냅샷
 PICK_TOP_N = 5

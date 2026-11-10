@@ -170,6 +170,18 @@
       <div class="m"><span class="k">10거래일 변화</span>{% if v and v.metrics.get('chg10d') is not none %}<span class="v {{ 'up' if v.metrics.chg10d >= 0 else 'down' }}">{{ "{:+.1f}".format(v.metrics.chg10d) }}%</span>{% else %}<span class="v mut">-</span>{% endif %}</div>
       <div class="m"><span class="k">60일 고점 대비</span>{% if v and v.metrics.get('dd60') is not none %}<span class="v {{ 'up' if v.metrics.dd60 >= 0 else 'down' }}">{{ "{:+.1f}".format(v.metrics.dd60) }}%</span>{% else %}<span class="v mut">-</span>{% endif %}</div>
     </div>
+    {% set lv = v.metrics.get('levels') if v else None %}
+    {% if lv %}
+    <div class="levels" style="margin:8px 0">
+      <div class="mut">지지·저항 (일봉 {{ lv.bars }}개 · 스윙 고저점 + 거래량 집중)</div>
+      {% for r in lv.resistances|reverse %}<div class="lv res"><span class="up">저항 ▲ {{ "{:,.0f}".format(r.price) }}</span> <span class="mut">{{ "{:+.1f}".format(r.dist_pct) }}% · {{ r.strength }} · {{ r.touches }}회 반응{% if r.vol_node %} · 거래량 집중{% endif %}</span></div>{% endfor %}
+      {% if not lv.resistances %}<div class="lv mut">위쪽 저항선 없음{% if lv.at_high %} (기간 고점 부근){% endif %}</div>{% endif %}
+      <div class="lv mut" style="border-top:1px dashed var(--bd);border-bottom:1px dashed var(--bd);margin:3px 0;padding:2px 0">현재가 {{ "{:,.0f}".format(lv.price) }}</div>
+      {% for r in lv.supports %}<div class="lv sup"><span class="down">지지 ▼ {{ "{:,.0f}".format(r.price) }}</span> <span class="mut">{{ "{:+.1f}".format(r.dist_pct) }}% · {{ r.strength }} · {{ r.touches }}회 반응{% if r.vol_node %} · 거래량 집중{% endif %}</span></div>{% endfor %}
+      {% if not lv.supports %}<div class="lv mut">아래쪽 지지선 없음{% if lv.at_low %} (기간 저점 부근 · 지지 이탈 구간){% endif %}</div>{% endif %}
+      <div class="mut" style="margin-top:3px">{% if lv.vol_ratio is not none %}최근 5일 거래량은 직전 20일 평균의 {{ "{:.1f}".format(lv.vol_ratio) }}배 · {% endif %}과거에 가격이 반응한 자리를 기계적으로 찾은 것으로 앞으로도 작동한다는 보장은 없습니다. 투자 권유가 아닙니다.</div>
+    </div>
+    {% endif %}
     <details style="margin:4px 0">
       <summary class="mut" style="cursor:pointer">증권사 컨센서스 (참고용 · 낙관 편향 주의)</summary>
       <div class="metrics" style="margin-top:6px">
