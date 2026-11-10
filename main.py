@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
         sched.shutdown(wait=False)
 
 
-app = FastAPI(title="K-MacroSight", lifespan=lifespan)
+app = FastAPI(title="내손안의주식", lifespan=lifespan)
 STATIC_DIR = config.BASE_DIR / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -365,7 +365,7 @@ async def push_unsubscribe(request: Request):
 @app.post("/push/test")
 def push_test():
     with db.session() as conn:
-        n = alerts.notify_all(conn, dict(title="K-MacroSight 테스트 알림", body="알림이 정상적으로 도착했습니다.",
+        n = alerts.notify_all(conn, dict(title="내손안의주식 테스트 알림", body="알림이 정상적으로 도착했습니다.",
                                           url="/watchlist", tag="test"))
     return {"ok": n > 0, "sent": n}
 

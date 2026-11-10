@@ -156,10 +156,30 @@ def test_push_test_sends_to_registered_device(monkeypatch):
     with TestClient(main.app) as c:
         c.post("/push/subscribe", json=SUB)
         assert c.post("/push/test").json() == {"ok": True, "sent": 1}
-    assert s.calls[0][1]["title"].startswith("K-MacroSight")
+    assert s.calls[0][1]["title"].startswith("내손안의주식")
 
 
 def test_service_worker_handles_push_and_skips_push_api_cache():
     with TestClient(main.app) as c:
         js = c.get("/sw.js").text
     assert "addEventListener('push'" in js and "notificationclick" in js and "startsWith('/push/')" in js
+
+
+def test_app_name_and_icons_match_manifest():
+    import json
+    import struct
+
+    from pathlib import Path
+    with TestClient(main.app) as c:
+        m = json.loads(c.get("/manifest.webmanifest").text)
+        html = c.get("/").text
+    assert m["name"] == "내손안의주식" and m["short_name"] == "내손안의주식"
+    assert "<title>내손안의주식</title>" in html and "<h1>내손안의주식</h1>" in html and "MacroSight" not in html
+    root = Path(main.__file__).parent / "static"
+    for icon in m["icons"]:                                              # 선언한 크기와 실제 PNG 크기가 같아야 한다
+        data = (root / icon["src"].split("/static/")[1]).read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+        w, h = struct.unpack(">II", data[16:24])
+        assert f"{w}x{h}" == icon["sizes"]
+    data = (root / "apple-touch-icon.png").read_bytes()
+    assert struct.unpack(">II", data[16:24]) == (180, 180)

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2230"/><stop offset="1" stop-color="#0e1116"/></linearGradient>
+    <linearGradient id="up" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2a9d4a"/><stop offset="1" stop-color="#7ee69a"/></linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe0c2"/><stop offset="1" stop-color="#f0b98d"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- 상승 막대 + 추세선 (손 뒤에서 올라온다) -->
+  <g>
+    <rect x="160" y="248" width="48" height="90" rx="10" fill="#2a9d4a"/>
+    <rect x="232" y="196" width="48" height="142" rx="10" fill="url(#up)"/>
+    <rect x="304" y="138" width="48" height="200" rx="10" fill="url(#up)"/>
+    <polyline points="150,228 226,176 292,196 352,118" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <polygon points="372,100 372,146 328,128" fill="#ffffff" transform="rotate(8 360 120)"/>
+  </g>
+  <!-- 받쳐 든 두 손: 손바닥(그릇) + 양쪽 엄지 + 손가락 선 + 두 손이 맞닿은 이음선 -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="112" cy="292" rx="23" ry="38" transform="rotate(-22 112 292)" fill="url(#skin)" stroke="#d29a6c" stroke-width="5"/>
+    <ellipse cx="400" cy="292" rx="23" ry="38" transform="rotate(22 400 292)" fill="url(#skin)" stroke="#d29a6c" stroke-width="5"/>
+    <path d="M84 304 C84 398 160 448 256 448 C352 448 428 398 428 304 C428 292 418 288 408 294 C374 312 334 322 256 322 C178 322 138 312 104 294 C94 288 84 292 84 304 Z" fill="url(#skin)"/>
+    <path d="M104 296 C138 314 178 323 256 323 C334 323 374 314 408 296" fill="none" stroke="#e3a979" stroke-width="6"/>
+    <!-- 가운데 이음선 -->
+    <path d="M256 326 C250 366 262 406 256 446" fill="none" stroke="#d29a6c" stroke-width="7"/>
+    <!-- 손가락 선(왼손/오른손) -->
+    <path d="M132 334 C150 372 188 398 238 410" fill="none" stroke="#d29a6c" stroke-width="6"/>
+    <path d="M118 360 C140 396 182 420 232 430" fill="none" stroke="#d29a6c" stroke-width="6" opacity=".8"/>
+    <path d="M380 334 C362 372 324 398 274 410" fill="none" stroke="#d29a6c" stroke-width="6"/>
+    <path d="M394 360 C372 396 330 420 280 430" fill="none" stroke="#d29a6c" stroke-width="6" opacity=".8"/>
+  </g>
+</svg>

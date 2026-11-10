@@ -1,7 +1,7 @@
 {
-  "name": "K-MacroSight",
-  "short_name": "MacroSight",
-  "description": "국장 매크로·수급 우호도 점수 대시보드 (개인용)",
+  "name": "내손안의주식",
+  "short_name": "내손안의주식",
+  "description": "내 손안의 국장 매크로·AI 주식 가이드 (개인용)",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

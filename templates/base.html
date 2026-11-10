@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111418">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="MacroSight">
+<meta name="apple-mobile-web-app-title" content="내손안의주식">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-<title>K-MacroSight</title>
+<title>내손안의주식</title>
 <style>
   :root { color-scheme: light dark; --bg:#fff; --fg:#111; --mut:#666; --bd:#ddd; --card:#f6f7f9; }
   @media (prefers-color-scheme: dark) { :root { --bg:#111418; --fg:#e8e8e8; --mut:#999; --bd:#2c3138; --card:#1a1e24; } }
@@ -61,7 +61,7 @@
 </style>
 </head>
 <body>
-<h1>K-MacroSight</h1>
+<h1>내손안의주식</h1>
 {% set generated = now_kst() %}
 <div id="offline-banner" role="alert" data-generated="{{ generated }}"></div>
 <nav><a href="/" class="{{ 'on' if active == 'dash' }}">대시보드</a><a href="/tracker" class="{{ 'on' if active == 'tracker' }}">AI 사이클</a><a href="/market" class="{{ 'on' if active == 'market' }}">시황·뉴스</a><a href="/screener" class="{{ 'on' if active == 'screen' }}">강세 종목</a><a href="/watchlist" class="{{ 'on' if active == 'watch' }}">관심종목</a><a href="/analog" class="{{ 'on' if active == 'analog' }}">과거 비교</a><a href="/performance" class="{{ 'on' if active == 'perf' }}">성과 검증</a><a href="/settings" class="{{ 'on' if active == 'settings' }}">가중치</a></nav>
