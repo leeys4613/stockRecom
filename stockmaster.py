@@ -49,9 +49,10 @@ def _like(s):
 def _insert(conn, rows, source):
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     conn.executemany(
-        "INSERT OR REPLACE INTO stock_master (code,name,market,name_norm,choseong,source,updated_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        [(r["code"], r["name"], r["market"], norm(r["name"]), choseong(r["name"]), source, now) for r in rows])
+        "INSERT OR REPLACE INTO stock_master (code,name,market,name_norm,choseong,source,updated_at,industry) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        [(r["code"], r["name"], r["market"], norm(r["name"]), choseong(r["name"]), source, now, r.get("industry"))
+         for r in rows])
 
 
 def seed_if_empty(conn):
@@ -129,6 +130,7 @@ def search(conn, q, limit=8):
 _NAME_COLS = {"회사명", "종목명", "한글종목약명", "한글종목명", "종목약명", "한글약명", "name"}
 _CODE_COLS = {"종목코드", "단축코드", "code", "종목번호", "ticker", "티커"}
 _MARKET_COLS = {"시장구분", "시장", "market", "시장명"}
+_INDUSTRY_COLS = {"업종", "업종명", "industry", "sector"}
 
 
 def _decode(raw):
@@ -189,6 +191,7 @@ def parse_file(filename, raw):
     cols = {norm(c): c for c in df.columns}
     pick = lambda names: next((cols[n] for n in (norm(x) for x in names) if n in cols), None)  # noqa: E731
     c_name, c_code, c_mkt = pick(_NAME_COLS), pick(_CODE_COLS), pick(_MARKET_COLS)
+    c_ind = pick(_INDUSTRY_COLS)       # 없어도 된다(대장주 계산에만 쓴다)
     missing = [label for label, c in (("회사명/종목명", c_name), ("종목코드", c_code), ("시장구분", c_mkt)) if c is None]
     if missing:
         raise StockMasterError(f"필요한 컬럼이 없습니다: {', '.join(missing)} (찾은 컬럼: {', '.join(map(str, df.columns))[:120]})")
@@ -200,5 +203,6 @@ def parse_file(filename, raw):
         if not code or not market or not nm or nm.lower() == "nan" or code in seen:
             continue
         seen.add(code)
-        out.append(dict(code=code, name=nm, market=market))
+        ind = " ".join(str(r[c_ind]).split())[:60] if c_ind is not None and r[c_ind] == r[c_ind] else ""
+        out.append(dict(code=code, name=nm, market=market, industry=None if not ind or ind.lower() == "nan" else ind))
     return out

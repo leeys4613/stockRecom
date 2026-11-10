@@ -87,13 +87,13 @@ def index(request: Request):
 
 
 @app.get("/screener")
-def screener_page(request: Request, m: str | None = None):
+def screener_page(request: Request):
     with db.session() as conn:
         last, ok, items = screener.latest(conn)
         watch = {w["code"] for w in reports.watchlist(conn)}
-    if m in ("KS", "KQ"):
-        items = [i for i in items if i["market"] == m]
-    ctx = dict(active="screen", last=last, run=ok, items=items, m=m, watch=watch, flag_text=screener.FLAG_TEXT,
+    sections = [dict(key=k, title=title, index=idx, items=[i for i in items if i["market"] == k])
+                for k, title, idx in (("KS", "코스피", "KOSPI"), ("KQ", "코스닥", "KOSDAQ"))]
+    ctx = dict(active="screen", last=last, run=ok, sections=sections, watch=watch, flag_text=screener.FLAG_TEXT,
                markets=reports.MARKETS, cfg=config, level_text=policy_mod.LEVEL_TEXT)
     return templates.TemplateResponse(request, "screener.html", ctx)
 

@@ -315,3 +315,13 @@ def test_seed_topup_adds_new_seed_stocks_but_not_over_uploaded_list():
 def test_market_of_accepts_kind_abbreviation():
     assert stockmaster._market_of("유가") == "KS" and stockmaster._market_of("유가증권시장") == "KS"
     assert stockmaster._market_of("코스닥") == "KQ" and stockmaster._market_of("코넥스") is None
+
+
+def test_upload_parses_industry_column_when_present():
+    df = pd.DataFrame({"회사명": ["가나다전자", "라마바소프트"], "시장구분": ["유가", "코스닥"], "종목코드": ["000001", "000002"],
+                       "업종": ["전자부품 제조업", "소프트웨어 개발 및 공급업"]})
+    raw = df.to_html(index=False).encode("utf-8")
+    out = stockmaster.parse_file("kind.xls", raw)
+    assert {r["code"]: r["industry"] for r in out} == {"000001": "전자부품 제조업", "000002": "소프트웨어 개발 및 공급업"}
+    out2 = stockmaster.parse_file("kind.xls", df.drop(columns=["업종"]).to_html(index=False).encode("utf-8"))
+    assert all(r["industry"] is None for r in out2)

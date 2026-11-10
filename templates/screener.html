@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>지수 대비 강세 종목</h2>
-<p class="mut">최근 3~5거래일에 소속 지수(코스피 종목은 KOSPI, 코스닥 종목은 KOSDAQ)보다 <b>더 오른</b> 종목을 찾습니다.
-  조건: 3일·5일 수익률이 모두 지수보다 높고, 최근 5거래일 중 {{ cfg.SCREEN_BEAT_DAYS }}일 이상 지수보다 더 올랐으며,
+<p class="mut">최근 3~10거래일에 소속 지수(코스피 종목은 KOSPI, 코스닥 종목은 KOSDAQ)보다 <b>더 오른</b> 종목을 찾습니다.
+  조건: 3일·5일·10일 수익률이 모두 지수보다 높고, 최근 5거래일 중 {{ cfg.SCREEN_BEAT_DAYS }}일 이상 지수보다 더 올랐으며,
   시가총액 {{ "{:,.0f}".format(cfg.SCREEN_MIN_MCAP / 1e8) }}억원 이상·20일 평균 거래대금 {{ "{:,.0f}".format(cfg.SCREEN_MIN_VALUE20 / 1e8) }}억원 이상입니다.
+  뉴스로 강세의 배경을 확인할 수 없는("뚜렷한 배경 없음") 종목은 뺍니다.
   <b>이미 일어난 결과를 걸러 보여줄 뿐 앞으로의 상승을 예측하지 않으며</b>, 많이 오른 종목은 되돌림이 나오기도 합니다. 투자 권유가 아닙니다.</p>
 
 <form method="post" action="/screener/refresh" style="margin:10px 0">
@@ -16,38 +17,45 @@
 {% if run and run.ai_status == 'failed' %}<div class="warn" id="ai-failed">AI 보강(뉴스 해석)을 하지 못해 수치만 표시합니다: {{ run.ai_error }}</div>{% endif %}
 {% if run %}
 <div class="card" id="screen-summary">
-  <div><b>기준일 {{ run.asof }}</b> <span class="mut">· 지수 수익률 3일/5일</span></div>
-  <div class="metrics" style="margin-top:6px">
-    <div class="m"><span class="k">KOSPI</span><span class="v {{ 'up' if run.index_ret.KS.r3 >= 0 else 'down' }}">{{ "{:+.1f}".format(run.index_ret.KS.r3) }}% / {{ "{:+.1f}".format(run.index_ret.KS.r5) }}%</span></div>
-    <div class="m"><span class="k">KOSDAQ</span><span class="v {{ 'up' if run.index_ret.KQ.r3 >= 0 else 'down' }}">{{ "{:+.1f}".format(run.index_ret.KQ.r3) }}% / {{ "{:+.1f}".format(run.index_ret.KQ.r5) }}%</span></div>
-  </div>
+  <div><b>기준일 {{ run.asof }}</b> <span class="mut">· 코스피와 코스닥을 따로 선정합니다(각각 자기 지수와 비교)</span></div>
   <div class="mut" style="margin-top:6px">대상 {{ run.universe_n }}종목 중 {{ run.loaded_n }}개 조회 · 조회 실패/기준일 데이터 없음 {{ run.failed_n }}개(거래정지 등 포함)
-    · 강세 조건 통과 {{ run.passed_n }}개 → 시가총액 조건 후 {{ run.final_n }}개{% if run.mcap_missing_n %} · 시가총액 확인 실패로 제외 {{ run.mcap_missing_n }}개{% endif %}</div>
+    · 강세 조건 통과 {{ run.passed_n }}개{% if run.pool_n is not none %} → 시가총액 조건 후 {{ run.pool_n }}개{% if run.ai_status == 'ok' %} → 배경 불명 {{ run.nobg_n }}개 제외 → 추천 {{ run.final_n }}개{% else %} → 추천 {{ run.final_n }}개{% endif %}{% else %} → 시가총액 조건 후 {{ run.final_n }}개{% endif %}{% if run.mcap_missing_n %} · 시가총액 확인 실패로 제외 {{ run.mcap_missing_n }}개{% endif %}</div>
 </div>
 
-<div style="margin:8px 0">
-  <a href="/screener" style="color:inherit;{{ 'font-weight:600;' if not m }}">전체</a> ·
-  <a href="/screener?m=KS" style="color:inherit;{{ 'font-weight:600;' if m == 'KS' }}">코스피</a> ·
-  <a href="/screener?m=KQ" style="color:inherit;{{ 'font-weight:600;' if m == 'KQ' }}">코스닥</a>
-  <span class="mut">· 순위는 (3일 초과수익 + 5일 초과수익) 평균</span>
-</div>
+<div style="margin:8px 0"><a href="#sec-KS" style="color:inherit">코스피</a> · <a href="#sec-KQ" style="color:inherit">코스닥</a>
+  <span class="mut">· 순위는 3일·5일·10일 지수 대비 초과수익의 평균, 각 시장 최대 {{ cfg.SCREEN_TOP_N }}개</span></div>
 
-<div id="screen-list">
-{% for i in items %}
+{% for sec in sections %}
+<section id="sec-{{ sec.key }}" class="screen-sec">
+  <h2>{{ sec.title }} <span class="mut" style="font-weight:400">· {{ sec.index }} 대비</span></h2>
+  {% set ir = run.index_ret.get(sec.key) %}
+  {% if ir %}<div class="mut">{{ sec.index }} 3일 <b class="{{ 'up' if ir.r3 >= 0 else 'down' }}">{{ "{:+.1f}".format(ir.r3) }}%</b> · 5일 <b class="{{ 'up' if ir.r5 >= 0 else 'down' }}">{{ "{:+.1f}".format(ir.r5) }}%</b>{% if ir.r10 is defined %} · 10일 <b class="{{ 'up' if ir.r10 >= 0 else 'down' }}">{{ "{:+.1f}".format(ir.r10) }}%</b>{% endif %}</div>{% endif %}
+  <div class="screen-list" id="screen-list-{{ sec.key }}">
+  {% for i in sec['items'] %}
   <div class="card stock" data-code="{{ i.code }}">
     <div class="stock-head">
-      <div><b style="font-size:17px">{{ loop.index }}. {{ i.name }}</b> <span class="mut">{{ i.code }}.{{ i.market }}</span></div>
+      <div><b style="font-size:17px">{{ i.rank }}. {{ i.name }}</b> <span class="mut">{{ i.code }}.{{ i.market }}</span></div>
       {% if i.code in watch %}<span class="badge fresh">관심종목</span>
       {% else %}<form method="post" action="/watchlist/add" style="margin:0"><input type="hidden" name="code" value="{{ i.code }}"><input type="hidden" name="market" value="{{ i.market }}"><input type="hidden" name="name" value="{{ i.name }}"><button type="submit" title="관심종목에 추가">＋ 관심</button></form>{% endif %}
     </div>
     <div class="metrics">
       <div class="m"><span class="k">3일 수익률</span><span class="v {{ 'up' if i.r3 >= 0 else 'down' }}">{{ "{:+.1f}".format(i.r3) }}%</span><span class="sub up">지수 대비 {{ "{:+.1f}".format(i.ex3) }}%p</span></div>
       <div class="m"><span class="k">5일 수익률</span><span class="v {{ 'up' if i.r5 >= 0 else 'down' }}">{{ "{:+.1f}".format(i.r5) }}%</span><span class="sub up">지수 대비 {{ "{:+.1f}".format(i.ex5) }}%p</span></div>
+      {% if i.r10 is not none %}<div class="m"><span class="k">10일 수익률</span><span class="v {{ 'up' if i.r10 >= 0 else 'down' }}">{{ "{:+.1f}".format(i.r10) }}%</span><span class="sub up">지수 대비 {{ "{:+.1f}".format(i.ex10) }}%p</span></div>{% endif %}
       <div class="m"><span class="k">지수 이긴 날</span><span class="v">{{ i.beat_days }} / 5일</span></div>
       <div class="m"><span class="k">시가총액</span><span class="v">{% if i.mcap >= 1e12 %}{{ "{:,.1f}".format(i.mcap / 1e12) }}조{% else %}{{ "{:,.0f}".format(i.mcap / 1e8) }}억{% endif %}</span></div>
       <div class="m"><span class="k">현재가</span><span class="v">{{ "{:,.0f}".format(i.price) }}</span></div>
       <div class="m"><span class="k">거래량(5일/20일)</span><span class="v">{% if i.vol_ratio is not none %}{{ "{:.1f}".format(i.vol_ratio) }}배{% else %}-{% endif %}</span></div>
     </div>
+    {% if i.leader %}
+    <div class="leader mut" style="margin:6px 0">업종 <b>{{ i.leader.industry }}</b> ·
+      {% if i.leader.is_self %}<span class="badge fresh">업종 대장주(시총 1위)</span>
+      {% else %}대장주 <b>{{ i.leader.name }}</b> ({{ i.leader.code }}.{{ i.leader.market }}) 시총 {% if i.leader.mcap >= 1e12 %}{{ "{:,.1f}".format(i.leader.mcap / 1e12) }}조{% else %}{{ "{:,.0f}".format(i.leader.mcap / 1e8) }}억{% endif %}
+        · 5일 <span class="{{ 'up' if i.leader.r5 >= 0 else 'down' }}">{{ "{:+.1f}".format(i.leader.r5) }}%</span>(지수 대비 {{ "{:+.1f}".format(i.leader.ex5) }}%p)
+        · 10일 <span class="{{ 'up' if i.leader.r10 >= 0 else 'down' }}">{{ "{:+.1f}".format(i.leader.r10) }}%</span>
+        {% if i.leader.ex5 > 0 %}<span class="badge fresh">대장주도 강세</span>{% else %}<span class="badge stale">대장주는 지수 이하</span>{% endif %}{% endif %}
+    </div>
+    {% endif %}
     {% if i.ai %}
     <div class="ai-note" style="margin:6px 0">
       <div><span class="badge none">{{ i.ai.reason_type }}</span>
@@ -62,13 +70,16 @@
     {% endif %}
     {% if i.flags %}<div class="flags">{% for f in i.flags %}<span class="badge stale">{{ flag_text[f] }}</span>{% endfor %}</div>{% endif %}
   </div>
-{% else %}
-  <div class="card mut">조건에 맞는 종목이 없습니다.</div>
+  {% else %}
+    <div class="card mut">조건에 맞는 종목이 없습니다{% if run and run.nobg_n %} (배경을 확인할 수 없어 뺀 종목은 두 시장 합쳐 {{ run.nobg_n }}개){% endif %}.</div>
+  {% endfor %}
+  </div>
+</section>
 {% endfor %}
-</div>
 {% else %}
 <div class="card mut">아직 스캔 결과가 없습니다. 위 "지금 스캔"을 누르면 전체 종목에서 조건에 맞는 종목을 찾습니다. {% if not last %}처음 실행은 시가총액을 조회하느라 몇 분 걸릴 수 있습니다.{% endif %}</div>
 {% endif %}
 <p class="mut">AI 보강: 후보의 최근 3일 뉴스 헤드라인에 근거해 강세의 배경·뉴스 톤·리스크를 해석합니다(한 번의 AI 호출). 근거 헤드라인을 확인하지 못한 판단은 중립으로 처리하며, 수익률·시가총액 같은 숫자는 AI가 아니라 코드가 계산합니다.</p>
+<p class="mut">업종·대장주: 업종은 KRX 표준 업종명(세분류, 사용자가 올린 상장법인 목록 기준)이라 시장에서 말하는 섹터와 다를 수 있습니다. 대장주는 같은 업종에서 20일 평균 거래대금 상위 {{ cfg.SCREEN_LEADER_CHECK }}개 중 시가총액이 가장 큰 종목입니다. 업종 정보가 없으면 표시하지 않습니다.</p>
 <p class="mut">데이터: Yahoo Finance 일봉(지연·누락 가능). 기준일 일봉이 없는 종목(거래정지·데이터 지연)은 제외하고 개수를 표시합니다. 시가총액은 Yahoo 값이며 확인되지 않으면 제외합니다.</p>
 {% endblock %}

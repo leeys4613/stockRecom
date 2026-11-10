@@ -67,11 +67,12 @@ def yf_mcap(symbol):
 # ---- 계산 ----
 def index_returns(bars):
     """[(date, close)] -> {'asof', 'r3', 'r5', 'daily': {date: 일수익률 %}} (마지막 6개 일봉 사용)."""
-    if len(bars) < 6:
+    if len(bars) < 11:
         raise ValueError(f"지수 일봉 {len(bars)}개뿐")
     c = [b[1] for b in bars]
     daily = {bars[i][0]: (c[i] / c[i - 1] - 1) * 100 for i in range(len(bars) - 5, len(bars))}
-    return dict(asof=bars[-1][0], r3=(c[-1] / c[-4] - 1) * 100, r5=(c[-1] / c[-6] - 1) * 100, daily=daily)
+    return dict(asof=bars[-1][0], r3=(c[-1] / c[-4] - 1) * 100, r5=(c[-1] / c[-6] - 1) * 100,
+                r10=(c[-1] / c[-11] - 1) * 100, daily=daily)
 
 
 def evaluate(bars, idx):
@@ -80,10 +81,11 @@ def evaluate(bars, idx):
         return None
     c = [b[1] for b in bars]
     v = [b[2] for b in bars]
-    if min(c[-6:]) <= 0:
+    if min(c[-11:]) <= 0:
         return None
     r3 = (c[-1] / c[-4] - 1) * 100
     r5 = (c[-1] / c[-6] - 1) * 100
+    r10 = (c[-1] / c[-11] - 1) * 100
     beat = 0
     for i in range(len(bars) - 5, len(bars)):
         d = bars[i][0]
@@ -91,13 +93,19 @@ def evaluate(bars, idx):
             beat += 1
     value20 = sum(ci * vi for ci, vi in zip(c[-20:], v[-20:])) / 20
     avg20 = sum(v[-20:]) / 20
-    return dict(price=c[-1], r3=r3, r5=r5, ex3=r3 - idx["r3"], ex5=r5 - idx["r5"], beat_days=beat, value20=value20,
+    return dict(price=c[-1], r3=r3, r5=r5, r10=r10, ex3=r3 - idx["r3"], ex5=r5 - idx["r5"], ex10=r10 - idx["r10"],
+                beat_days=beat, value20=value20,
                 vol_ratio=(sum(v[-5:]) / 5) / avg20 if avg20 else None)
 
 
 def passes(m):
     return (m["price"] >= config.SCREEN_MIN_PRICE and m["value20"] >= config.SCREEN_MIN_VALUE20
-            and m["ex3"] > 0 and m["ex5"] > 0 and m["beat_days"] >= config.SCREEN_BEAT_DAYS)
+            and m["ex3"] > 0 and m["ex5"] > 0 and m["ex10"] > 0 and m["beat_days"] >= config.SCREEN_BEAT_DAYS)
+
+
+def rank_key(m):
+    """순위: 3일·5일·10일 지수 대비 초과수익의 평균(클수록 위)."""
+    return -(m["ex3"] + m["ex5"] + m["ex10"]) / 3
 
 
 def flags_for(m):
@@ -134,7 +142,7 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
         mcap_fetcher = mcap_fetcher or yf_mcap
         delay = config.SCREEN_MCAP_DELAY_SEC if delay is None else delay
         with conn_factory() as conn:
-            universe = [dict(r) for r in conn.execute("SELECT code,name,market FROM stock_master")]
+            universe = [dict(r) for r in conn.execute("SELECT code,name,market,industry FROM stock_master")]
         try:
             idx = {m: index_returns(index_fetcher(sym)) for m, sym in config.SCREEN_INDEX.items()}
         except Exception as e:
@@ -143,6 +151,7 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
         by_sym = {f"{u['code']}.{u['market']}": u for u in universe}
         syms = list(by_sym)
         loaded, failed, cands = 0, 0, []
+        allm = {}       # 평가가 끝난 모든 종목의 지표 (대장주 비교에 쓴다)
         for i in range(0, len(syms), config.SCREEN_CHUNK):
             part = syms[i:i + config.SCREEN_CHUNK]
             try:
@@ -158,17 +167,19 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
                     failed += 1     # 기준일 일봉 없음(거래정지·지연)/이력 부족도 집계한다
                     continue
                 loaded += 1
+                allm[u["code"]] = m
                 if passes(m):
                     cands.append(dict(u, **m, flags=flags_for(m)))
         if universe and loaded < len(universe) * config.SCREEN_MIN_LOAD_RATIO:
             # 데이터 대부분을 못 받은 결과는 "강세 종목 없음"처럼 보이면 안 되므로 실패로 기록한다
             return _save_failed(conn_factory, len(universe),
                                 f"종목 일봉 조회 성공률이 낮습니다 ({loaded}/{len(universe)}개). 네트워크/Yahoo 제한을 확인하세요")
-        cands.sort(key=lambda x: -(x["ex3"] + x["ex5"]) / 2)
+        cands.sort(key=rank_key)
         final, missing = [], 0
+        in_pool = {"KS": 0, "KQ": 0}      # 코스피·코스닥을 따로 뽑는다(각각 자기 지수와 비교)
         for c in cands:
-            if len(final) >= config.SCREEN_TOP_N:
-                break
+            if in_pool[c["market"]] >= config.SCREEN_AI_POOL:
+                continue
             with conn_factory() as conn:
                 cached = conn.execute("SELECT 1 FROM mcap_cache WHERE code=?", (c["code"],)).fetchone()
                 try:
@@ -182,38 +193,99 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
                 continue
             if mc >= config.SCREEN_MIN_MCAP:
                 final.append(dict(c, mcap=mc))
+                in_pool[c["market"]] += 1
+        # 2단계: AI 가 뉴스 근거로 강세 배경을 해석한다. 배경을 확인할 수 없는("뚜렷한 배경 없음") 종목은 추천에서 뺀다
+        ai_status, ai_error, notes, dropped = None, None, {}, 0
+        kept = final
+        if ai:
+            ai_status, ai_error, notes = _interpret(final, idx, provider, headline_fetcher)
+            if ai_status == "ok":
+                kept = [c for c in final if notes[c["code"]]["reason_type"] != "뚜렷한 배경 없음"]
+                dropped = len(final) - len(kept)
+            elif ai_status == "failed":
+                notes = {}      # 해석을 못 했으면 뺄 근거가 없으므로 수치 순위 그대로 보여주되 화면에 경고한다
+        per, kept_top = {"KS": 0, "KQ": 0}, []
+        for c in kept:                      # 시장별 상위 TOP_N (순위는 시장 안에서 매긴다)
+            if per[c["market"]] < config.SCREEN_TOP_N:
+                per[c["market"]] += 1
+                kept_top.append(dict(c, rank=per[c["market"]]))
+        kept = kept_top
+        leaders = _leaders(conn_factory, kept, universe, allm, mcap_fetcher, delay)
         with conn_factory() as conn:
             rid = conn.execute(
-                "INSERT INTO screen_runs (created_at,status,asof,index_ret,universe_n,loaded_n,failed_n,passed_n,mcap_missing_n,final_n) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO screen_runs (created_at,status,asof,index_ret,universe_n,loaded_n,failed_n,passed_n,mcap_missing_n,final_n,"
+                "ai_status,ai_error,pool_n,nobg_n) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (now_iso(), "ok", asof,
-                 json.dumps({m: dict(r3=round(v["r3"], 2), r5=round(v["r5"], 2)) for m, v in idx.items()}),
-                 len(universe), loaded, failed, len(cands), missing, len(final))).lastrowid
+                 json.dumps({m: dict(r3=round(v["r3"], 2), r5=round(v["r5"], 2), r10=round(v["r10"], 2)) for m, v in idx.items()}),
+                 len(universe), loaded, failed, len(cands), missing, len(kept), ai_status, ai_error, len(final), dropped)).lastrowid
             conn.executemany(
-                "INSERT INTO screen_items (run_id,rank,code,name,market,price,r3,r5,ex3,ex5,beat_days,value20,mcap,vol_ratio,flags) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [(rid, n, c["code"], c["name"], c["market"], c["price"], round(c["r3"], 2), round(c["r5"], 2), round(c["ex3"], 2),
-                  round(c["ex5"], 2), c["beat_days"], c["value20"], c["mcap"],
-                  None if c["vol_ratio"] is None else round(c["vol_ratio"], 2), json.dumps(c["flags"]))
-                 for n, c in enumerate(final, 1)])
-        if ai:
-            _augment(conn_factory, rid, final, idx, provider, headline_fetcher)
+                "INSERT INTO screen_items (run_id,rank,code,name,market,price,r3,r5,r10,ex3,ex5,ex10,beat_days,value20,mcap,vol_ratio,flags,ai,leader) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [(rid, n, c["code"], c["name"], c["market"], c["price"], round(c["r3"], 2), round(c["r5"], 2), round(c["r10"], 2),
+                  round(c["ex3"], 2), round(c["ex5"], 2), round(c["ex10"], 2), c["beat_days"], c["value20"], c["mcap"],
+                  None if c["vol_ratio"] is None else round(c["vol_ratio"], 2), json.dumps(c["flags"]),
+                  json.dumps(notes[c["code"]], ensure_ascii=False) if c["code"] in notes else None,
+                  json.dumps(leaders[c["code"]], ensure_ascii=False) if leaders.get(c["code"]) else None)
+                 for n, c in ((c["rank"], c) for c in kept)])
         return rid
     finally:
         _lock.release()
 
 
-def _augment(conn_factory, rid, final, idx, provider, headline_fetcher):
-    """2단계: 후보의 최근 헤드라인을 모아 AI 가 강세 배경·톤·리스크를 해석한다. 실패해도 1단계 결과는 그대로 둔다."""
+def _leaders(conn_factory, kept, universe, allm, mcap_fetcher, delay):
+    """추천 종목마다 같은 업종(KRX 업종명)의 대장주 = 시가총액 1위를 찾는다. 반환: {code: leader dict 또는 None}.
+
+    업종 안에서 20일 평균 거래대금 상위 LEADER_CHECK 개만 시가총액을 조회한다(대장주는 거래도 활발하다는 가정, 조회 비용 제한).
+    시가총액을 하나도 확인하지 못하면 None.
+    """
+    by_ind = {}
+    for u in universe:
+        if u.get("industry") and u["code"] in allm:
+            by_ind.setdefault(u["industry"], []).append(u)
+    cache = {}      # 업종 -> leader dict
+    out = {}
+    for c in kept:
+        ind = next((u["industry"] for u in universe if u["code"] == c["code"]), None)
+        if not ind:
+            out[c["code"]] = None
+            continue
+        if ind not in cache:
+            members = sorted(by_ind.get(ind, []), key=lambda u: -allm[u["code"]]["value20"])[:config.SCREEN_LEADER_CHECK]
+            best = None
+            for u in members:
+                with conn_factory() as conn:
+                    cached = conn.execute("SELECT 1 FROM mcap_cache WHERE code=?", (u["code"],)).fetchone()
+                    try:
+                        mc = _mcap(conn, u["code"], f"{u['code']}.{u['market']}", mcap_fetcher)
+                    except Exception:
+                        mc = None
+                if not cached and delay:
+                    time.sleep(delay)
+                if mc and (best is None or mc > best[1]):
+                    best = (u, mc)
+            if best is None:
+                cache[ind] = None
+            else:
+                u, mc = best
+                m = allm[u["code"]]
+                cache[ind] = dict(code=u["code"], name=u["name"], market=u["market"], mcap=mc, r5=round(m["r5"], 1),
+                                  ex5=round(m["ex5"], 1), r10=round(m["r10"], 1), ex10=round(m["ex10"], 1), industry=ind,
+                                  members=len(by_ind.get(ind, [])))
+        lead = cache[ind]
+        out[c["code"]] = None if lead is None else dict(lead, is_self=lead["code"] == c["code"])
+    return out
+
+
+def _interpret(final, idx, provider, headline_fetcher):
+    """2단계: 후보의 최근 헤드라인을 모아 AI 가 강세 배경·톤·리스크를 해석한다. 반환: (status, error, {code: 해석}).
+
+    status: ok / failed / skipped(후보 없음). 실패해도 예외를 내지 않는다.
+    """
     from analyzer import screen_llm
     from collectors import news
 
-    def mark(status, error=None):
-        with conn_factory() as conn:
-            conn.execute("UPDATE screen_runs SET ai_status=?, ai_error=? WHERE id=?", (status, error, rid))
-
     if not final:
-        return mark("skipped")
+        return "skipped", None, {}
     try:
         titles = {}
         for i, c in enumerate(final):
@@ -224,21 +296,17 @@ def _augment(conn_factory, rid, final, idx, provider, headline_fetcher):
             except Exception:
                 titles[c["code"]] = []
         ctx = dict(
-            index_returns={m: dict(r3=round(v["r3"], 1), r5=round(v["r5"], 1)) for m, v in idx.items()},
+            index_returns={m: dict(r3=round(v["r3"], 1), r5=round(v["r5"], 1), r10=round(v["r10"], 1)) for m, v in idx.items()},
             stocks=[dict(code=c["code"], name=c["name"], market=c["market"], r3=round(c["r3"], 1), r5=round(c["r5"], 1),
-                         excess3=round(c["ex3"], 1), excess5=round(c["ex5"], 1), beat_days_of_5=c["beat_days"],
+                         r10=round(c["r10"], 1), excess3=round(c["ex3"], 1), excess5=round(c["ex5"], 1),
+                         excess10=round(c["ex10"], 1), beat_days_of_5=c["beat_days"],
                          flags=c["flags"], headlines=titles[c["code"]]) for c in final])
         result = screen_llm.analyze(ctx, provider or screen_llm.get_provider(), {c["code"] for c in final})
         if result["status"] != "ok":
-            return mark("failed", result["error"])
-        with conn_factory() as conn:
-            for c in final:
-                a = screen_llm.assess(result["items"].get(c["code"]), titles[c["code"]])
-                conn.execute("UPDATE screen_items SET ai=? WHERE run_id=? AND code=?",
-                             (json.dumps(a, ensure_ascii=False), rid, c["code"]))
-        mark("ok")
+            return "failed", result["error"], {}
+        return "ok", None, {c["code"]: screen_llm.assess(result["items"].get(c["code"]), titles[c["code"]]) for c in final}
     except Exception as e:
-        mark("failed", f"{type(e).__name__}: {e}"[:300])
+        return "failed", f"{type(e).__name__}: {e}"[:300], {}
 
 
 def _save_failed(conn_factory, universe_n, error):
@@ -256,9 +324,10 @@ def latest(conn):
     ok = dict(ok)
     ok["index_ret"] = json.loads(ok["index_ret"]) if ok["index_ret"] else {}
     items = []
-    for r in conn.execute("SELECT * FROM screen_items WHERE run_id=? ORDER BY rank", (ok["id"],)):
+    for r in conn.execute("SELECT * FROM screen_items WHERE run_id=? ORDER BY market DESC, rank", (ok["id"],)):
         d = dict(r)
         d["flags"] = json.loads(d["flags"]) if d["flags"] else []
         d["ai"] = json.loads(d["ai"]) if d.get("ai") else None
+        d["leader"] = json.loads(d["leader"]) if d.get("leader") else None
         items.append(d)
     return (dict(last) if last else None), ok, items

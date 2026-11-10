@@ -145,7 +145,10 @@ def test_page_renders_filters_and_refresh(monkeypatch):
         html = c.get("/screener").text
         assert "지수 대비 강세 종목" in html and "강세대형" in html and "투자 권유가 아닙니다" in html and "예측하지 않으며" in html
         assert "＋ 관심" in html and "매도" not in html and "조회 실패/기준일 데이터 없음" in html
-        assert "강세대형" not in c.get("/screener?m=KQ").text and "강세대형" in c.get("/screener?m=KS").text
+        ks = html[html.index('id="screen-list-KS"'):html.index('id="sec-KQ"')]
+        kq = html[html.index('id="screen-list-KQ"'):]
+        assert "강세대형" in ks and "강세대형" not in kq                      # 코스피/코스닥을 따로 보여준다
+        assert "KOSPI 대비" in html and "KOSDAQ 대비" in html and "조건에 맞는 종목이 없습니다" in kq
         calls = []
         monkeypatch.setattr(S, "run", lambda f, *a: calls.append(1))
         assert c.post("/screener/refresh", follow_redirects=False).status_code == 303
@@ -216,8 +219,8 @@ def test_unsupported_evidence_or_no_headlines_is_neutralized(monkeypatch):
     assert a["news_tone"] == 0 and a["tone_evidence"] == [] and "근거 헤드라인을 확인하지 못해" in a["tone_note"]
     run_ai(ScreenProvider(ai_payload()), titles=())
     with db.session() as conn:
-        a = next(i for i in S.latest(conn)[2] if i["code"] == "000001")["ai"]
-    assert a["news_tone"] == 0 and a["reason_type"] == "뚜렷한 배경 없음" and a["reason"] is None and "기사를 찾지 못했습니다" in a["tone_note"]
+        _, run, items = S.latest(conn)
+    assert items == [] and run["nobg_n"] == run["pool_n"] > 0          # 기사가 없어 배경을 확인할 수 없으면 추천에서 뺀다
 
 
 def test_invalid_kind_values_fall_back():
@@ -265,3 +268,106 @@ def test_raise_fd_limit_never_lowers_or_raises_errors():
     soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
     S.raise_fd_limit(16)
     assert resource.getrlimit(resource.RLIMIT_NOFILE)[0] >= min(soft, 16)
+
+
+def test_ten_day_excess_is_required_and_part_of_rank():
+    idx = IDX()
+    m = S.evaluate(mk(d2=2.0), idx)
+    assert m["ex10"] > 0 and S.passes(m)
+    assert not S.passes(dict(m, ex10=-0.1))                                          # 10일도 지수를 이겨야 한다
+    a, b = dict(ex3=10, ex5=10, ex10=10), dict(ex3=30, ex5=0, ex10=0)
+    assert S.rank_key(a) < S.rank_key(b) or S.rank_key(a) == S.rank_key(b)           # 평균이 같으면 동률
+    assert S.rank_key(dict(ex3=20, ex5=20, ex10=20)) < S.rank_key(dict(ex3=5, ex5=5, ex10=5))
+
+
+def test_no_background_stocks_are_removed_and_counted(monkeypatch):
+    monkeypatch.setattr(config, "STOCK_VIEW_DELAY_SEC", 0)
+    p = ScreenProvider(dict(items=[
+        dict(code="000001", reason_type="실적·펀더멘털", reason="r", news_tone=2, tone_evidence=[T1], catalyst_kind="지속성", risk=""),
+        dict(code="000002", reason_type="뚜렷한 배경 없음", reason="", news_tone=0, tone_evidence=[], catalyst_kind="불명", risk=""),
+        dict(code="000005", reason_type="업황·테마", reason="r", news_tone=1, tone_evidence=[T1], catalyst_kind="불명", risk="")]))
+    run_ai(p)
+    with db.session() as conn:
+        _, run, items = S.latest(conn)
+    assert [i["code"] for i in items] == ["000001", "000005"]                        # 순위는 남은 종목 기준으로 다시 매긴다
+    assert [i["rank"] for i in items] == [1, 2] and run["nobg_n"] == 1 and run["pool_n"] == 3 and run["final_n"] == 2
+    assert items[0]["r10"] is not None and items[0]["ex10"] > 0
+
+
+def test_ai_failure_shows_numeric_ranking_without_dropping():
+    run_ai(ScreenProvider(exc=RuntimeError("down")))
+    with db.session() as conn:
+        _, run, items = S.latest(conn)
+    assert run["ai_status"] == "failed" and run["nobg_n"] == 0 and len(items) == 3
+
+
+def test_markets_are_selected_separately_with_own_top_n(monkeypatch):
+    monkeypatch.setattr(config, "SCREEN_TOP_N", 1)
+    monkeypatch.setattr(config, "SCREEN_AI_POOL", 2)
+    seed_master()
+    with db.session() as conn:                       # 코스닥 강세 종목 하나 추가
+        conn.execute("INSERT INTO stock_master (code,name,market,name_norm,choseong,source,updated_at) VALUES ('000006','강세코스닥','KQ','x','x','t','x')")
+    chunk = lambda syms: {s: v for s, v in {**{k: mk(d2=2.0) for k in ("000001.KS", "000002.KS", "000005.KS")},  # noqa: E731
+                                             "000006.KQ": mk(d2=2.5)}.items() if s in syms}
+    S.run(db.session, chunk, lambda s: idx_bars(), lambda s: 2e12, delay=0, ai=False)
+    with db.session() as conn:
+        _, run, items = S.latest(conn)
+    by = {m: [i["code"] for i in items if i["market"] == m] for m in ("KS", "KQ")}
+    assert len(by["KS"]) == 1 and by["KQ"] == ["000006"]                            # 시장별로 각각 TOP_N 개
+    assert all(i["rank"] == 1 for i in items)                                       # 순위는 시장 안에서 매긴다
+    assert run["pool_n"] == 3                                                       # AI 풀: 코스피 2 + 코스닥 1
+
+
+# ---------- 업종 대장주 ----------
+def set_industry(**by_code):
+    with db.session() as conn:
+        for code, ind in by_code.items():
+            conn.execute("UPDATE stock_master SET industry=? WHERE code=?", (ind, code))
+
+
+def test_leader_is_largest_mcap_in_same_industry_with_own_performance():
+    seed_master()
+    set_industry(**{"000001": "소프트웨어", "000002": "소프트웨어", "000005": "소프트웨어", "000003": "철강"})
+    MCAPS = {"000001.KS": 2e12, "000002.KS": 9e11, "000005.KS": 6e12, "000003.KQ": 1e12}
+    S.run(db.session, fake_chunk, lambda s: idx_bars(), lambda s: MCAPS[s], delay=0, ai=False)
+    with db.session() as conn:
+        _, _, items = S.latest(conn)
+    by = {i["code"]: i for i in items}
+    lead = by["000001"]["leader"]
+    assert lead["code"] == "000005" and lead["name"] == "시총모름" and lead["mcap"] == 6e12 and lead["is_self"] is False
+    assert lead["industry"] == "소프트웨어" and lead["ex5"] > 0 and lead["r5"] is not None       # 대장주의 최근 성과도 함께
+    assert by["000005"]["leader"]["is_self"] is True                                           # 자신이 대장주
+
+
+def test_leader_missing_when_no_industry_or_no_mcap():
+    seed_master()                                            # 업종 정보 없음
+    S.run(db.session, fake_chunk, lambda s: idx_bars(), lambda s: 2e12, delay=0, ai=False)
+    with db.session() as conn:
+        _, _, items = S.latest(conn)
+    assert items and all(i["leader"] is None for i in items)
+    set_industry(**{"000001": "소프트웨어", "000002": "소프트웨어", "000005": "소프트웨어"})
+    calls = []
+
+    def flaky(sym):
+        calls.append(sym)
+        if sym == "000001.KS":
+            return 2e12
+        raise RuntimeError("no mcap")
+    with db.session() as conn:
+        conn.execute("DELETE FROM mcap_cache")
+    S.run(db.session, fake_chunk, lambda s: idx_bars(), flaky, delay=0, ai=False)
+    with db.session() as conn:
+        _, _, items = S.latest(conn)
+    lead = items[0]["leader"]
+    assert lead["code"] == "000001"                                    # 확인된 시총만으로 판단(시총 모르는 종목은 후보에서 빠짐)
+
+
+def test_leader_shown_on_page():
+    seed_master()
+    set_industry(**{"000001": "소프트웨어", "000002": "소프트웨어", "000005": "소프트웨어"})
+    S.run(db.session, fake_chunk, lambda s: idx_bars(), lambda s: {"000001.KS": 2e12, "000002.KS": 9e11, "000005.KS": 6e12}[s],
+          delay=0, ai=False)
+    with TestClient(main.app) as c:
+        html = c.get("/screener").text
+    assert "업종 <b>소프트웨어</b>" in html and "대장주 <b>시총모름</b>" in html and "업종 대장주(시총 1위)" in html
+    assert "KRX 표준 업종명" in html and "매도" not in html
