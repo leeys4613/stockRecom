@@ -1,9 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>과거 비교 · 공포·환희 신호 백테스트</h2>
-<p class="mut">KOSPI와 VIX의 장기 일봉({{ span.start }} ~ {{ span.end }}, {{ span.n }}거래일)으로 두 가지를 확인합니다.
-  ① <b>지금과 가장 비슷했던 과거 구간</b> 뒤에 KOSPI가 어땠는지, ② 대시보드의 <b>공포·환희 신호</b> 등급별로 이후 5·20거래일 KOSPI 수익률이 어땠는지.
-  <b>과거 분포이며 예측이 아닙니다.</b> 표본 수가 적은 항목은 해석에 주의하세요.</p>
+<h2>과거 비교</h2>
+<p class="mut">KOSPI와 VIX의 장기 일봉({{ span.start }} ~ {{ span.end }}, {{ span.n }}거래일)에서 <b>지금과 가장 비슷했던 과거 구간</b>을 찾아, 그 뒤 KOSPI가 어땠는지 보여줍니다.
+  <b>과거 분포이며 예측이 아닙니다.</b> 표본 수가 적으면 해석에 주의하세요.</p>
 
 <form method="post" action="/analog/refresh" style="margin:10px 0">
   <button type="submit">데이터 갱신</button>
@@ -66,49 +65,8 @@
   </div>
 </section>
 
-<section id="backtest">
-  <h2>공포·환희 신호는 과거에 쓸모가 있었나</h2>
-  <p class="mut">대시보드의 공포·환희 신호(공포 과열·공포·보통·낙관·환희 과열)가 <b>처음 켜진 날</b>을 과거에서 모두 찾아, 그 뒤 KOSPI가 어땠는지 모았습니다.
-    평소(아무 날이나 골랐을 때)보다 <b>{{ "{:.0f}".format(gap) }}%p 이상 차이</b>가 나야 "좋았음/나빴음"으로 표시하고, 비슷하면 "평소와 비슷"입니다.</p>
-
-  <div class="card" id="bt-glance">
-    <b>한눈에 보기</b>
-    <ul class="lines">
-    {% for r in bt %}
-      <li><b>{{ r.label }}</b> <span class="mut">({{ r.episodes }}번)</span> —
-        일주일 뒤 <span class="badge {{ r.v[5].cls }}">{{ r.v[5].label }}</span>
-        한 달 뒤 <span class="badge {{ r.v[20].cls }}">{{ r.v[20].label }}</span></li>
-    {% endfor %}
-    </ul>
-    <div class="mut">평소 기준: 일주일 뒤 {{ "{:.0f}".format(base[5].up) }}%, 한 달 뒤 {{ "{:.0f}".format(base[20].up) }}%가 올라 있었음.</div>
-  </div>
-
-  {% for r in bt %}
-  <div class="card bt-card" data-level="{{ r.level }}">
-    <div><b>{{ r.label }}</b>
-      <span class="mut">· {{ {'extreme_fear': 'VIX가 매우 높고 KOSPI가 많이 빠진 상태', 'fear': 'VIX가 높거나 KOSPI가 빠진 상태', 'neutral': '특별한 공포·환희 없음', 'greed': 'VIX가 낮고 KOSPI가 오른 상태', 'extreme_greed': 'VIX가 매우 낮고 KOSPI가 급등한 상태'}[r.level] }}</span></div>
-    <div class="mut">처음 켜진 날 {{ r.episodes }}번{% if r.episodes < 30 %} · <span class="down">표본 부족(30 미만)이라 우연일 수 있음</span>{% endif %}</div>
-    {% for h, title in ((5, '일주일 뒤'), (20, '한 달 뒤')) %}{% set d = r.ep[h] %}{% set v = r.v[h] %}
-    <div class="hz">
-      {% if d.n %}
-      <div class="head"><b>{{ title }}</b><span class="badge {{ v.cls }}">{{ v.label }}</span></div>
-      <div>{{ d.n }}번 중 <b>{{ "{:.0f}".format(d.up) }}%</b>가 올라 있었음 <span class="mut">(평소 {{ "{:.0f}".format(base[h].up) }}%)</span></div>
-      <div class="rate" aria-hidden="true"><span class="fill" style="width:{{ d.up }}%"></span><span class="base" style="left:{{ base[h].up }}%"></span></div>
-      <div class="legend mut">보통 결과 <span class="{{ 'up' if d.median >= 0 else 'down' }}">{{ "{:+.1f}".format(d.median) }}%</span> · 나빴던 경우(10번 중 1번) {{ "{:+.1f}".format(d.p10) }}% 이하</div>
-      {% else %}<div class="head"><b>{{ title }}</b><span class="badge none">표본 없음</span></div>{% endif %}
-    </div>
-    {% endfor %}
-    <details style="margin-top:8px"><summary class="mut" style="cursor:pointer">그 등급이었던 모든 날로 보면 (겹치는 구간 포함)</summary>
-      <div class="mut" style="margin-top:4px">총 {{ r.days }}일 ·
-        {% for h, title in ((5, '일주일 뒤'), (20, '한 달 뒤')) %}{% set d = r.all[h] %}{% if d.n %}{{ title }}: {{ "{:.0f}".format(d.up) }}%가 올라 있었음, 보통 {{ "{:+.1f}".format(d.median) }}%{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
-        <br>연속된 날이 여러 번 세어져 표본이 부풀려 보일 수 있습니다.</div>
-    </details>
-  </div>
-  {% endfor %}
-</section>
-
 <p class="mut" id="analog-caveats"><b>읽을 때 주의</b> · 과거에 그랬다고 앞으로도 그렇다는 보장은 없습니다. · 신호가 켜진 횟수(표본)가 적으면 우연일 수 있습니다. ·
   KOSPI 지수 수익률이며 개별 종목이 아닙니다. 비용·세금은 반영하지 않았습니다. · 그날 종가 진입을 가정했고, VIX는 한국 장 마감 때 알 수 있는 직전 미국 종가를 썼습니다. ·
-  신호 임계값(VIX 25/30 등)은 제가 정한 어림값입니다. 이 표는 그 값이 과거에 의미가 있었는지 보는 용도이며 임계값을 이 데이터에 맞춰 조정하면 과적합이 됩니다. · 투자 권유가 아닙니다.</p>
+  투자 권유가 아닙니다.</p>
 {% endif %}
 {% endblock %}

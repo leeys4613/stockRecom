@@ -1,4 +1,4 @@
-"""과거 유사 국면 분석과 공포·환희 신호 백테스트 (KOSPI 지수 기준, 순수 계산).
+"""과거 유사 국면 분석 (KOSPI 지수 기준, 순수 계산).
 
 특징(앱의 공포·환희 신호와 같은 입력): VIX, VIX 10일 평균, KOSPI 10거래일 변화(%), KOSPI 10일 고점 대비(%).
 시차: 한국 장 마감 시점에는 직전 미국 장 마감 VIX 만 알 수 있으므로, KOSPI 날짜보다 "이전" 날짜의 VIX 를 쓴다(미래 정보 차단).
@@ -8,10 +8,8 @@ import math
 import statistics
 
 import config
-from scoring import sentiment
 
 TREND = config.TREND_DAYS
-LEVELS = [("extreme_fear", "공포 과열"), ("fear", "공포"), ("neutral", "보통"), ("greed", "낙관"), ("extreme_greed", "환희 과열")]
 HORIZONS = (5, 20)
 
 
@@ -35,8 +33,6 @@ def build_rows(ks, vix, start=None):
         row = dict(i=i, date=d, vix=v, vixavg=vavg, k10=k10, kdd=kdd, close=c)
         for h in HORIZONS:
             row[f"f{h}"] = (closes[i + h] / c - 1) * 100 if i + h < len(closes) else None
-        sig = sentiment.assess(vix=v, vix_avg=vavg, kospi_10d=k10, kospi_dd=kdd)
-        row["level"], row["net"] = (sig["level"], sig["net"]) if sig else (None, None)
         rows.append(row)
     return rows
 
@@ -78,30 +74,6 @@ def verdict(d, base):
     if diff <= -VERDICT_GAP:
         return dict(label="평소보다 나빴음", cls="failed", diff=diff)
     return dict(label="평소와 비슷", cls="none", diff=diff)
-
-
-def _episodes(rows, sep=None):
-    """같은 신호가 sep 거래일 이내로 이어지면 한 에피소드. 각 에피소드의 첫 날 행을 돌려준다."""
-    sep = sep or config.ANALOG_SEP_DAYS
-    out, last_i = [], None
-    for r in rows:
-        if last_i is None or r["i"] - last_i > sep:
-            out.append(r)
-        last_i = r["i"]
-    return out
-
-
-def backtest(rows):
-    """신호 등급별 이후 수익률. all=해당 등급인 모든 날(겹침 있음), ep=에피소드 첫 날(신호가 처음 켜진 날). 기준선=전체 날."""
-    res = []
-    for lvl, label in LEVELS:
-        sel = [r for r in rows if r["level"] == lvl]
-        ep = _episodes(sel)
-        res.append(dict(level=lvl, label=label, days=len(sel), episodes=len(ep),
-                        all={h: dist([r[f"f{h}"] for r in sel]) for h in HORIZONS},
-                        ep={h: dist([r[f"f{h}"] for r in ep]) for h in HORIZONS}))
-    base = {h: dist([r[f"f{h}"] for r in rows]) for h in HORIZONS}
-    return res, base
 
 
 def nearest(rows, current, k=None, sep=None):

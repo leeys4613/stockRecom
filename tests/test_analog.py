@@ -56,31 +56,10 @@ def test_start_date_and_warmup_are_respected():
     assert A.build_rows(ks[:5], vx[:5]) == []
 
 
-def test_backtest_groups_levels_and_episodes():
-    ks, vx = synth()
-    rows = A.build_rows(ks, vx, start="2005-01-01")
-    bt, base = A.backtest(rows)
-    assert [r["level"] for r in bt] == [lv for lv, _ in A.LEVELS]
-    fear = next(r for r in bt if r["level"] in ("fear",) )
-    stress = [r for r in bt if r["level"] in ("fear", "extreme_fear")]
-    assert sum(r["days"] for r in stress) > 0                         # 충격 구간이 신호로 잡힌다
-    for r in bt:
-        assert r["episodes"] <= r["days"]
-        if r["days"]:
-            assert r["ep"][5]["n"] <= r["episodes"]
-    assert base[5]["n"] > 0 and base[5]["up"] > 0
 
 
-def test_stress_signal_is_followed_by_rebound_in_synthetic_data():
-    ks, vx = synth()
-    rows = A.build_rows(ks, vx, start="2005-01-01")
-    sel = [r for r in rows if r["level"] in ("fear", "extreme_fear") and r["f20"] is not None]
-    assert sel and A.dist([r["f20"] for r in sel])["median"] > 0      # 합성 데이터에서 반등이 나오게 만들었으므로 그대로 잡혀야 한다
 
 
-def test_episodes_merge_consecutive_days():
-    rows = [dict(i=i) for i in (1, 2, 3, 4, 30, 31, 80)]
-    assert [r["i"] for r in A._episodes(rows, sep=10)] == [1, 30, 80]
 
 
 def test_nearest_picks_similar_separated_days_and_distribution():
@@ -142,8 +121,8 @@ def test_page_without_data_and_with_data():
     history.refresh(db.session, fake_fetcher())
     with TestClient(main.app) as c:
         html = c.get("/analog").text
-    assert 'id="backtest"' in html and 'id="analog-table"' in html and "과거 분포이며 예측이 아닙니다" in html
-    assert 'data-level="extreme_fear"' in html and "표본 부족(30 미만)" in html and "과적합" in html
+    assert 'id="analog-summary"' in html and 'id="analog-table"' in html and "과거 분포이며 예측이 아닙니다" in html
+    assert 'id="backtest"' not in html and "공포·환희 신호는 과거에" not in html and 'data-level' not in html     # 신호 등급별 백테스트는 뺐다
     assert "매도" not in html
 
 
@@ -172,7 +151,7 @@ def test_page_uses_plain_language_with_glance_summary():
     with TestClient(main.app) as c:
         html = c.get("/analog").text
     assert 'id="how-to-read"' in html and "오른 비율" in html and "나빴던 경우" in html and "보통 결과" in html
-    assert 'id="bt-glance"' in html and "한눈에 보기" in html and ("평소보다" in html or "평소와 비슷" in html or "표본 적음" in html)
+    assert "평소" in html and ("평소보다" in html or "평소와 비슷" in html or "표본 적음" in html)
     assert "일주일 뒤" in html and "한 달 뒤" in html and 'class="rate"' in html
     assert "중앙값" not in html and "에피소드" not in html and "하위10%" not in html          # 통계 용어를 쓰지 않는다
     assert "매도" not in html
