@@ -205,7 +205,7 @@ def test_dashboard_shows_policy_panel_with_evidence():
 def test_dashboard_macro_table_includes_vix_spx_dxy():
     run(FakeProvider(policy_payload()))
     with client() as c:
-        html = c.get("/").text
+        html = c.get("/market").text
     for name in ("VIX 공포지수", "S&amp;P 500", "달러인덱스"):
         assert name in html
 

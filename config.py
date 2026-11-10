@@ -154,6 +154,7 @@ SIGNAL_YELLOW = 40
 # --- 증권사 컨센서스 / Top Picks (yfinance, 크롤링 없음) ---
 # 네이버 증권·한경컨센서스는 robots.txt 가 전체 자동 수집을 금지(Disallow: /)하므로 사용하지 않는다.
 REPORTS_DELAY_SEC = 0.6          # 종목 간 조회 간격 (예의상 요청 속도 제한)
+ALERT_DEFAULT_MIN = 70   # 종목별 알림 기준 점수 기본값
 WATCHLIST_MAX = 50
 REPORTS_SCHEDULE = (16, 40)      # 거래일 장 마감 후 하루 1회 스냅샷
 PICK_TOP_N = 5

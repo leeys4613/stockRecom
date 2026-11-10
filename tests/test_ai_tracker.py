@@ -296,22 +296,24 @@ def test_dashboard_tracker_panel_and_summary_title():
     run(history=hist({}, default=[100.0] * 20 + [60.0] * 50 + [50.0] * 5),
         capex=lambda t: [(d, v * 1e9) for d, v in series(20, 25, 30, 35, 42)])
     with TestClient(main.app) as c:
-        html = c.get("/").text
+        html = c.get("/tracker").text
+        home = c.get("/").text
+        market = c.get("/market").text
     assert 'id="ai-tracker"' in html and "AI 투자 사이클 트래커" in html and "데이터센터 건설 속도" in html
     assert "빅테크 설비투자(CAPEX)" in html and "전년 대비 +110%" in html and "$168B" in html   # 42B × 4사
     for g in config.AI_GROUP_NAMES.values():
         assert g in html
     assert 'id="ai-table"' in html and 'id="capex-table"' in html and "<details" in html
     assert "시장이 투자의 지속성" in html                         # 규칙 기반 해석 문구
-    assert "AI 요약" in html and "AI 3줄 요약" not in html
+    assert "AI 요약" in home and "AI 3줄 요약" not in home and 'id="ai-tracker"' not in home   # 대시보드에는 트래커가 없다
     for name in ("AI 대형주 1일 변화", "AI 대형주 10거래일 변화", "AI 대형주 60일 고점 대비", "메모리주 10거래일 변화"):
-        assert name in html
+        assert name in market
 
 
 def test_dashboard_tracker_without_data_is_graceful():
     db.init_db()
     with TestClient(main.app) as c:
-        html = c.get("/").text
+        html = c.get("/tracker").text
     assert 'id="ai-tracker"' in html and "CAPEX 데이터가 아직 없습니다" in html and "데이터 없음" in html
 
 

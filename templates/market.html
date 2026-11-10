@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>매크로 지표</h2>
+<table id="macro">
+  <thead><tr><th>지표</th><th>현재값</th><th>전일비</th><th>상태</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr data-key="{{ r.key }}">
+    <td>{{ r.name }}</td>
+    <td>{% if r.value is not none %}{% if r.kind == 'feature' and r.unit == '%' %}{{ "{:+.2f}".format(r.value) }}%{% else %}{{ "{:,.2f}".format(r.value) }}{% endif %}{% else %}-{% endif %}</td>
+    <td class="{% if r.change_pct is not none %}{{ 'up' if r.change_pct >= 0 else 'down' }}{% endif %}">
+      {% if r.change_pct is not none %}{{ "{:+.2f}".format(r.change_pct) }}%{% elif r.kind == 'feature' %}<span class="mut">추세</span>{% else %}-{% endif %}</td>
+    <td><span class="badge {{ r.freshness }}">{{ {'fresh':'최신','stale':'오래됨','failed':'수집 실패','none':'데이터 없음'}[r.freshness] }}</span></td>
+  </tr>
+  {% if r.freshness == 'failed' %}
+  <tr><td colspan="4" class="err">{{ r.attempted_at | kst }} 실패: {{ r.error }}{% if r.ok_at %} (마지막 성공 {{ r.ok_at | kst }}){% endif %}</td></tr>
+  {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>뉴스 헤드라인</h2>
+<section id="news">
+{% for n in news %}
+  <div><b>{{ n.name }}</b>
+    {% if n.status == 'failed' %}<span class="badge failed">수집 실패</span>
+      <span class="mut">{{ n.error }}{% if n.ok_at %} (마지막 성공 {{ n.ok_at | kst }}){% endif %}</span>
+    {% elif n.status == 'none' %}<span class="badge none">데이터 없음</span>
+    {% else %}<span class="mut">{{ n.ok_at | kst }}</span>{% endif %}
+  </div>
+  <ul class="news">
+  {% for i in n.headlines %}
+    <li>{% if i.link %}<a href="{{ i.link }}" target="_blank" rel="noopener noreferrer">{{ i.title }}</a>{% else %}{{ i.title }}{% endif %}
+      {% if i.source %}<span class="mut"> · {{ i.source }}</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+{% endfor %}
+</section>
+{% endblock %}

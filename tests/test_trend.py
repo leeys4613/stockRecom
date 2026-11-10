@@ -196,7 +196,7 @@ def test_migrated_version_is_usable_by_pipeline_and_settings():
 def test_dashboard_shows_trend_rows_with_units():
     run(hist([115, 113, 108, 105, 100, 98, 99, 101, 100, 95, 92, 90], [28] * 12))
     with TestClient(main.app) as c:
-        html = c.get("/").text
+        html = c.get("/market").text
     for name in ("KOSPI 10거래일 변화", "KOSPI 10일 고점 대비", "VIX 10일 평균 (20=중립)"):
         assert name in html
     assert "-20.35%" in html and "추세" in html            # 90/113-1, 파생 지표는 전일비 칸에 '추세'

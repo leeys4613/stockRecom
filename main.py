@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import alerts
 import allocations
 import config
 import db
@@ -76,11 +77,23 @@ def health():
 def index(request: Request):
     with db.session() as conn:
         top, _, cons_at, view_at = pipeline.top_picks_view(conn)
-        ctx = dict(active="dash", rows=macro.latest(conn), news=news.latest(conn),
-                   analysis=pipeline.latest_analysis(conn), picks=top, picks_at=cons_at, view_at=view_at,
-                   tracker=pipeline.tracker_view(conn), group_names=config.AI_GROUP_NAMES,
-                   watch_count=len(reports.watchlist(conn)))
+        ctx = dict(active="dash", analysis=pipeline.latest_analysis(conn), picks=top, picks_at=cons_at,
+                   view_at=view_at, watch_count=len(reports.watchlist(conn)))
     return templates.TemplateResponse(request, "index.html", ctx)
+
+
+@app.get("/tracker")
+def tracker_page(request: Request):
+    with db.session() as conn:
+        ctx = dict(active="tracker", tracker=pipeline.tracker_view(conn), group_names=config.AI_GROUP_NAMES)
+    return templates.TemplateResponse(request, "tracker.html", ctx)
+
+
+@app.get("/market")
+def market_page(request: Request):
+    with db.session() as conn:
+        ctx = dict(active="market", rows=macro.latest(conn), news=news.latest(conn))
+    return templates.TemplateResponse(request, "market.html", ctx)
 
 
 @app.post("/refresh")
@@ -164,7 +177,9 @@ async def settings_allocation_save(request: Request):
 
 def _watch_ctx(conn, **extra):
     _, evaluated, cons_at, view_at = pipeline.top_picks_view(conn)
-    return dict(active="watch", items=evaluated, picks_at=cons_at, view_at=view_at, markets=reports.MARKETS,
+    alert = {w["code"]: w for w in reports.watchlist(conn)}
+    return dict(active="watch", items=evaluated, alert=alert, push_n=alerts.subscription_count(conn),
+                alert_default=config.ALERT_DEFAULT_MIN, picks_at=cons_at, view_at=view_at, markets=reports.MARKETS,
                 level_text=policy_mod.LEVEL_TEXT, group_names=config.AI_GROUP_NAMES,
                 master=stockmaster.info(conn),
                 max_n=config.WATCHLIST_MAX, min_analysts=config.PICK_MIN_ANALYSTS,
@@ -236,6 +251,58 @@ async def watchlist_remove(request: Request):
 def watchlist_refresh(background: BackgroundTasks):
     background.add_task(pipeline.run_reports_and_views)
     return RedirectResponse("/watchlist", status_code=303)
+
+
+@app.post("/watchlist/alert")
+async def watchlist_alert(request: Request):
+    form = await request.form()
+    try:
+        with db.session() as conn:
+            alerts.set_alert(conn, form.get("code"), form.get("on") == "1", form.get("min"))
+    except alerts.AlertError as e:
+        with db.session() as conn:
+            ctx = _watch_ctx(conn)
+        ctx["error"] = str(e)
+        return templates.TemplateResponse(request, "watchlist.html", ctx, status_code=400)
+    return RedirectResponse("/watchlist", status_code=303)
+
+
+@app.get("/push/key")
+def push_key():
+    with db.session() as conn:
+        _, pub = alerts.vapid_keys(conn)
+    return JSONResponse({"key": pub}, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/push/subscribe")
+async def push_subscribe(request: Request):
+    try:
+        data = await request.json()
+        with db.session() as conn:
+            alerts.subscribe(conn, data)
+    except (alerts.AlertError, ValueError) as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    return {"ok": True}
+
+
+@app.post("/push/unsubscribe")
+async def push_unsubscribe(request: Request):
+    try:
+        data = await request.json()
+        endpoint = data["endpoint"]
+    except (ValueError, KeyError, TypeError):
+        return JSONResponse({"ok": False}, status_code=400)
+    with db.session() as conn:
+        alerts.unsubscribe(conn, endpoint)
+    return {"ok": True}
+
+
+@app.post("/push/test")
+def push_test():
+    with db.session() as conn:
+        n = alerts.notify_all(conn, dict(title="K-MacroSight 테스트 알림", body="알림이 정상적으로 도착했습니다.",
+                                          url="/watchlist", tag="test"))
+    return {"ok": n > 0, "sent": n}
 
 
 @app.get("/manifest.webmanifest")

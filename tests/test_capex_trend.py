@@ -183,7 +183,7 @@ def test_dashboard_shows_trend_line_arrows_and_table():
     pipeline.run_once(FakeProvider(GOOD), macro_ok, fake_rss,
                       capex_fetcher=lambda t: [(d, v * 1e9) for d, v in REAL[t]])
     with TestClient(main.app) as c:
-        html = c.get("/").text
+        html = c.get("/tracker").text
     assert 'id="capex-trend"' in html and "대체로 증가율 둔화" in html
     assert "분기 기준 +12%" in html and "직전 +30%" in html and "↘" in html and "↗" in html
     assert 'id="capex-trend-table"' in html and "<th>2분기</th>" in html and "<th>3분기</th>" in html
@@ -197,5 +197,5 @@ def test_dashboard_without_enough_quarters_hides_trend_line():
     pipeline.run_once(FakeProvider(GOOD), macro_ok, fake_rss,
                       capex_fetcher=lambda t: [("2026-06-30", 3.5e10), ("2026-09-30", 4e10)])   # 2분기뿐: 증가율의 추세를 못 구함
     with TestClient(main.app) as c:
-        html = c.get("/").text
+        html = c.get("/tracker").text
     assert 'id="capex-trend"' not in html and "직전 분기 대비" in html

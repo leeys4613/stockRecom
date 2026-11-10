@@ -88,6 +88,51 @@
   <span class="mut">{% if view_at %}마지막 AI 판정 {{ view_at | kst }}{% else %}아직 AI 판정 전{% endif %}{% if picks_at %} · 컨센서스 수집 {{ picks_at | kst }}{% endif %} · 백그라운드 실행(1분 안팎), 잠시 후 새로고침</span>
 </form>
 
+<div class="card" id="push-panel">
+  <b>알림</b> <span class="mut">종목별로 추천 점수가 기준 이상으로 올라서면 이 기기로 알려 드립니다(기준 위에 머무는 동안 반복하지 않음).</span>
+  <div style="margin:8px 0">
+    <button type="button" id="push-toggle" disabled>확인 중…</button>
+    <button type="button" id="push-test" hidden>테스트 알림</button>
+    <span class="mut" id="push-status"></span>
+  </div>
+  <div class="mut">등록된 기기 {{ push_n }}대 · 알림 내용은 종목명과 점수뿐이며 매수 추천이 아닙니다. 폰에서는 앱 설치 후 알림 권한을 허용해야 합니다.</div>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById('push-toggle'), test = document.getElementById('push-test'), st = document.getElementById('push-status');
+  function say(t) { st.textContent = t; }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    btn.textContent = '이 브라우저는 알림 미지원'; say('HTTPS(Tailscale 주소)로 접속한 설치형 앱에서 사용하세요.'); return;
+  }
+  function b64(s) { s = (s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+    var r = atob(s), a = new Uint8Array(r.length); for (var i = 0; i < r.length; i++) a[i] = r.charCodeAt(i); return a; }
+  function post(url, body) { return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(function (r) { return r.json(); }); }
+  function refresh() {
+    return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {
+      btn.disabled = false; btn.dataset.on = sub ? '1' : '';
+      btn.textContent = sub ? '이 기기 알림 끄기' : '이 기기에서 알림 받기'; test.hidden = !sub;
+      if (!sub && Notification.permission === 'denied') say('알림 권한이 차단돼 있습니다. 브라우저/앱 설정에서 허용해 주세요.');
+    });
+  }
+  btn.addEventListener('click', function () {
+    btn.disabled = true; say('');
+    navigator.serviceWorker.ready.then(function (reg) {
+      return reg.pushManager.getSubscription().then(function (sub) {
+        if (sub) return post('/push/unsubscribe', { endpoint: sub.endpoint }).then(function () { return sub.unsubscribe(); });
+        return Notification.requestPermission().then(function (perm) {
+          if (perm !== 'granted') throw new Error('알림 권한이 허용되지 않았습니다');
+          return fetch('/push/key', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (k) {
+            return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(k.key) });
+          }).then(function (s) { return post('/push/subscribe', s.toJSON()); }).then(function (r) { if (!r.ok) throw new Error(r.error || '등록 실패'); });
+        });
+      });
+    }).then(function () { say('저장되었습니다.'); return refresh(); }).catch(function (e) { say(e.message || '실패'); return refresh(); });
+  });
+  test.addEventListener('click', function () { say('보내는 중…'); post('/push/test').then(function (r) { say(r.ok ? '테스트 알림을 보냈습니다.' : '발송 실패(등록된 기기 없음/만료)'); }).catch(function () { say('발송 실패'); }); });
+  refresh();
+})();
+</script>
+
 <div id="watch">
   {% for e in items %}
   {% set s = e.snap %}{% set v = e.view %}
@@ -140,6 +185,16 @@
         {% if e.last and e.last.status == 'failed' %}<span class="mut">{{ e.last.fetched_at | kst }} {{ e.last.error }}</span>{% endif %}
       </div>
     </details>
+    {% set al = alert[e.code] %}
+    <form method="post" action="/watchlist/alert" class="alert-form" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 4px">
+      <input type="hidden" name="code" value="{{ e.code }}">
+      <label style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" name="on" value="1" {{ 'checked' if al.alert_on }}> 알림</label>
+      <span class="mut">추천 점수</span>
+      <input type="number" name="min" min="1" max="99" step="1" value="{{ '%d' % (al.alert_min if al.alert_min else alert_default) }}" style="width:64px;padding:6px;font-size:16px" aria-label="{{ e.name }} 알림 기준 점수">
+      <span class="mut">점 이상일 때</span>
+      <button type="submit">저장</button>
+      {% if al.alert_on %}<span class="badge fresh">알림 켜짐</span>{% endif %}
+    </form>
     <div class="flags">
       <a href="https://finance.naver.com/item/main.naver?code={{ e.code }}" target="_blank" rel="noopener noreferrer" style="color:inherit">네이버 증권 ↗</a>
       <a href="https://consensus.hankyung.com/" target="_blank" rel="noopener noreferrer" style="color:inherit">한경컨센서스 ↗</a>

@@ -97,7 +97,7 @@ def test_dashboard_shows_qoq_as_primary_and_yoy_as_secondary():
     db.init_db()
     pipeline.run_once(FakeProvider(GOOD), macro_ok, fake_rss, capex_fetcher=lambda t: [(d, v * 1e9) for d, v in zip(QS, (20, 25, 30, 35, 42))])
     with TestClient(main.app) as c:
-        html = c.get("/").text
+        html = c.get("/tracker").text
     assert "직전 분기 대비 +20%" in html and "최근 분기 흐름" in html and "전년 대비 +110%" in html
     assert "<th>분기 대비</th>" in html and "전년 +110%" in html
 
@@ -242,6 +242,7 @@ def test_dashboard_shows_construction_signal_and_power_group():
     with db.session() as conn:
         ai_tracker.save(conn, snaps_for(power_us_dd=-30.0))
     with TestClient(main.app) as c:
-        html = c.get("/").text
+        html = c.get("/tracker").text
+        market = c.get("/market").text
     assert 'id="build-reading"' in html and "건설 속도 신호" in html and "전력·전기 인프라" in html
-    assert "전력 인프라 10거래일 변화 (참고)" in html
+    assert "전력 인프라 10거래일 변화 (참고)" in market

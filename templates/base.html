@@ -18,7 +18,8 @@
   body, td, th { word-break: keep-all; overflow-wrap: break-word; }
   h1 { margin:0 0 4px; font-size:22px; }
   h2 { font-size:16px; margin:24px 0 8px; }
-  nav a { margin-right:14px; color:inherit; text-decoration:none; padding-bottom:2px; }
+  nav { display:flex; flex-wrap:wrap; gap:6px 14px; }
+  nav a { white-space:nowrap; color:inherit; text-decoration:none; padding-bottom:2px; }
   nav a.on { border-bottom:2px solid currentColor; font-weight:600; }
   table { width:100%; border-collapse:collapse; }
   th, td { padding:8px 6px; border-bottom:1px solid var(--bd); text-align:right; }
@@ -63,7 +64,7 @@
 <h1>K-MacroSight</h1>
 {% set generated = now_kst() %}
 <div id="offline-banner" role="alert" data-generated="{{ generated }}"></div>
-<nav><a href="/" class="{{ 'on' if active == 'dash' }}">대시보드</a><a href="/performance" class="{{ 'on' if active == 'perf' }}">성과 검증</a><a href="/watchlist" class="{{ 'on' if active == 'watch' }}">관심종목</a><a href="/settings" class="{{ 'on' if active == 'settings' }}">가중치</a></nav>
+<nav><a href="/" class="{{ 'on' if active == 'dash' }}">대시보드</a><a href="/tracker" class="{{ 'on' if active == 'tracker' }}">AI 사이클</a><a href="/market" class="{{ 'on' if active == 'market' }}">시황·뉴스</a><a href="/watchlist" class="{{ 'on' if active == 'watch' }}">관심종목</a><a href="/performance" class="{{ 'on' if active == 'perf' }}">성과 검증</a><a href="/settings" class="{{ 'on' if active == 'settings' }}">가중치</a></nav>
 {% block content %}{% endblock %}
 <footer>개인용 참고 도구이며 투자자문이 아닙니다. 점수는 확률이 아니며 검증 전입니다.
   <br>화면 생성 {{ generated }} (오프라인이면 마지막으로 본 화면이 보일 수 있습니다)</footer>

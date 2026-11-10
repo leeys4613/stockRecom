@@ -129,6 +129,12 @@ CREATE TABLE IF NOT EXISTS watchlist (
     added_at TEXT NOT NULL
 );
 
+-- 웹 푸시 구독(기기별)과 앱 내부 키-값(VAPID 키)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS app_kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+
 -- 증권사 컨센서스 일별 스냅샷 (목표가 추이를 직접 계산하기 위해 계속 쌓는다)
 CREATE TABLE IF NOT EXISTS consensus_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +171,10 @@ def _migrate(conn):
     import json
     from datetime import datetime, timezone
 
+    wl_cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)")]
+    for col, typ in (("alert_on", "INTEGER NOT NULL DEFAULT 0"), ("alert_min", "REAL"), ("alert_fired", "INTEGER NOT NULL DEFAULT 0")):
+        if col not in wl_cols:
+            conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {typ}")
     ws_cols = [r["name"] for r in conn.execute("PRAGMA table_info(weight_sets)")]
     if "policy" not in ws_cols:
         conn.execute("ALTER TABLE weight_sets ADD COLUMN policy TEXT")

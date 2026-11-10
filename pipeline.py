@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import calendar_kr
 import config
 import db
+import alerts
 import allocations
 import gauge
 import performance
@@ -383,6 +384,11 @@ def run_stock_views(provider=None, history_fetcher=None, headline_fetcher=None, 
                                                x["groups"], metrics))
         with db.session() as conn:
             stockviews.save(conn, out)
+        try:   # 알림 실패가 판정 저장에 영향을 주지 않는다
+            with db.session() as conn:
+                alerts.check_and_notify(conn)
+        except Exception:
+            pass
         return len(out)
     finally:
         _stock_lock.release()

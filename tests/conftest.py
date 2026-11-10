@@ -28,6 +28,11 @@ def isolated(tmp_path, monkeypatch):
     def no_http(url):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(news, "http_fetch", no_http)                 # 종목 헤드라인 등 기본 조회 차단
+    import alerts
+
+    def no_push(sub, payload, pem):
+        raise RuntimeError("no network in tests")
+    monkeypatch.setattr(alerts, "send_push", no_push)                # 실제 푸시 발송 차단
     monkeypatch.setattr(reports, "yf_industry", lambda sym: None)    # Yahoo 업종 조회 차단
     monkeypatch.setattr(macro, "yf_closes", lambda symbol, period="2mo": flat_closes(start=20.0 if symbol == "^VIX" else 5000.0))
 

@@ -108,74 +108,6 @@
 {% endif %}
 </section>
 
-<section id="ai-tracker">
-  <h2>AI 투자 사이클 트래커</h2>
-  <div class="card">
-    <div class="mut">데이터센터 건설 속도에 대한 시장 반응 · 수요(빅테크 CAPEX) → 공급망(반도체·메모리) → 인프라(데이터센터)</div>
-    {% set cx = tracker.capex.total %}
-    <div style="margin-top:8px">
-      {% if cx %}<b>빅테크 설비투자(CAPEX)</b> {{ cx.n }}사 합계 ${{ "{:,.0f}".format(cx.capex / 1e9) }}B ({{ cx.period }} 분기)
-        <b class="{{ 'up' if cx.qoq >= 0 else 'down' }}">직전 분기 대비 {{ "{:+.0f}".format(cx.qoq) }}%</b>
-        {% if cx.qoq_history|length >= 2 %}<span class="mut">· 최근 분기 흐름 {% for h in cx.qoq_history %}{{ "{:+.0f}".format(h.qoq) }}%{% if not loop.last %} → {% endif %}{% endfor %}</span>{% endif %}
-        {% if cx.yoy is not none %}<span class="mut">· 전년 대비 {{ "{:+.0f}".format(cx.yoy) }}%</span>{% endif %}
-      {% if cx.trend %}
-      <div id="capex-trend" style="margin-top:6px"><b>증가율 추세</b>
-        <span class="{{ 'down' if '둔화' in cx.overall else 'up' if '가속' in cx.overall else 'mut' }}"><b>{{ cx.overall }}</b></span>
-        <div class="mut" style="margin-top:2px">
-          {% for t in cx.trend %}{{ t.label }} 기준 {{ "{:+.0f}".format(t.now) }}% <span class="mut">(직전 {{ "{:+.0f}".format(t.prev) }}%, {{ "{:+.0f}".format(t.delta) }}%p {{ '↘' if t.verdict == '둔화' else '↗' if t.verdict == '가속' else '→' }})</span>{% if not loop.last %} · {% endif %}{% endfor %}
-        </div></div>
-      {% endif %}
-      {% else %}<span class="mut">빅테크 CAPEX 데이터가 아직 없습니다.</span>{% endif %}
-    </div>
-    <div class="metrics">
-      {% for g, name in group_names.items() %}{% set gs = tracker.groups[g] %}
-      <div class="m"><span class="k">{{ name }}</span>
-        <span class="v {{ 'down' if gs.dd60 is not none and gs.dd60 < 0 else '' }}">{% if gs.dd60 is not none %}고점 대비 {{ "{:+.0f}".format(gs.dd60) }}%{% else %}-{% endif %}</span>
-        <span class="sub {{ 'up' if gs.chg10d is not none and gs.chg10d >= 0 else 'down' }}">{% if gs.chg10d is not none %}10일 {{ "{:+.1f}".format(gs.chg10d) }}%{% endif %}</span></div>
-      {% endfor %}
-    </div>
-    {% if tracker.reading %}<div class="warn" style="margin-top:4px">{{ tracker.reading }}</div>{% endif %}
-    {% if tracker.build_reading %}<div class="warn" id="build-reading" style="margin-top:4px"><b>건설 속도 신호</b> · {{ tracker.build_reading }}</div>{% endif %}
-    <details style="margin-top:8px">
-      <summary class="mut" style="cursor:pointer">종목별·CAPEX 상세 보기</summary>
-      <table id="ai-table" style="margin-top:6px">
-        <thead><tr><th>종목</th><th>1일</th><th>10일</th><th>고점 대비</th></tr></thead>
-        {% for r in tracker.rows %}
-        <tr><td>{{ r.name }}<br><span class="mut">{{ group_names[r.grp] }}</span></td>
-          {% if r.price is not none %}
-          <td class="{{ 'up' if r.chg1d >= 0 else 'down' }}">{{ "{:+.1f}".format(r.chg1d) }}%</td>
-          <td class="{{ 'up' if r.chg10d >= 0 else 'down' }}">{{ "{:+.1f}".format(r.chg10d) }}%</td>
-          <td class="{{ 'up' if r.dd60 >= 0 else 'down' }}">{{ "{:+.1f}".format(r.dd60) }}%</td>
-          {% else %}<td colspan="3" class="mut">{{ '수집 실패' if r.status == 'failed' else '데이터 없음' }}</td>{% endif %}
-        </tr>
-        {% endfor %}
-      </table>
-      <table id="capex-table" style="margin-top:10px">
-        <thead><tr><th>CAPEX(분기)</th><th>금액</th><th>분기 대비</th></tr></thead>
-        {% for p in tracker.capex.per %}
-        <tr><td>{{ p.ticker }}<br><span class="mut">{{ p.latest or '-' }}</span></td>
-          {% if p.latest %}<td>${{ "{:,.1f}".format(p.capex / 1e9) }}B</td>
-          <td class="{{ 'up' if p.qoq is not none and p.qoq >= 0 else 'down' }}">{% if p.qoq is not none %}{{ "{:+.0f}".format(p.qoq) }}%{% else %}-{% endif %}
-            {% if p.yoy is not none %}<br><span class="mut">전년 {{ "{:+.0f}".format(p.yoy) }}%</span>{% endif %}
-            {% for f in p.flags %}<br><span class="badge stale">{{ f }}</span>{% endfor %}</td>
-          {% else %}<td colspan="2" class="mut">데이터 없음</td>{% endif %}</tr>
-        {% endfor %}
-      </table>
-      <table id="capex-trend-table" style="margin-top:10px">
-        <thead><tr><th>증가율 추세</th><th>분기</th><th>2분기</th><th>3분기</th></tr></thead>
-        {% for name, tr, ov in tracker.capex_trend_rows %}
-        <tr><td>{{ name }}{% if ov %}<br><span class="mut">{{ ov }}</span>{% endif %}</td>
-          {% for lab in ('분기', '2분기', '3분기') %}{% set it = (tr | selectattr('label', 'equalto', lab) | list | first) if tr else none %}
-          <td>{% if it %}<span class="{{ 'down' if it.verdict == '둔화' else 'up' if it.verdict == '가속' else '' }}">{{ "{:+.0f}".format(it.now) }}%</span>
-            <br><span class="mut">직전 {{ "{:+.0f}".format(it.prev) }}% {{ '↘' if it.verdict == '둔화' else '↗' if it.verdict == '가속' else '→' }}</span>{% else %}<span class="mut">-</span>{% endif %}</td>
-          {% endfor %}</tr>
-        {% endfor %}
-      </table>
-      <div class="mut" style="margin-top:6px">증가율 추세 = 1·2·3분기 전 대비 증가율을 이번 분기 기준과 직전 분기 기준으로 비교(↘ 둔화, ↗ 가속). 이상치(분기 누락·급변)로 표시된 종목은 합계와 추세에서 제외합니다. 데이터: Yahoo Finance.</div>
-    </details>
-  </div>
-</section>
-
 <section id="picks">
   <h2>관심종목 AI 적합도 순위</h2>
   {% if not watch_count %}
@@ -194,42 +126,5 @@
     {% endfor %}
   {% endif %}
   <div class="mut">현재 분석 기준의 적합도이며 <b>매수 추천이 아닙니다</b>{% if view_at %} · AI 판정 {{ view_at | kst }}{% endif %}. 증권사 컨센서스는 낙관 편향이 커서 순위에 쓰지 않고 관심종목 탭에 참고로만 둡니다.</div>
-</section>
-
-<h2>매크로 지표</h2>
-<table id="macro">
-  <thead><tr><th>지표</th><th>현재값</th><th>전일비</th><th>상태</th></tr></thead>
-  <tbody>
-  {% for r in rows %}
-  <tr data-key="{{ r.key }}">
-    <td>{{ r.name }}</td>
-    <td>{% if r.value is not none %}{% if r.kind == 'feature' and r.unit == '%' %}{{ "{:+.2f}".format(r.value) }}%{% else %}{{ "{:,.2f}".format(r.value) }}{% endif %}{% else %}-{% endif %}</td>
-    <td class="{% if r.change_pct is not none %}{{ 'up' if r.change_pct >= 0 else 'down' }}{% endif %}">
-      {% if r.change_pct is not none %}{{ "{:+.2f}".format(r.change_pct) }}%{% elif r.kind == 'feature' %}<span class="mut">추세</span>{% else %}-{% endif %}</td>
-    <td><span class="badge {{ r.freshness }}">{{ {'fresh':'최신','stale':'오래됨','failed':'수집 실패','none':'데이터 없음'}[r.freshness] }}</span></td>
-  </tr>
-  {% if r.freshness == 'failed' %}
-  <tr><td colspan="4" class="err">{{ r.attempted_at | kst }} 실패: {{ r.error }}{% if r.ok_at %} (마지막 성공 {{ r.ok_at | kst }}){% endif %}</td></tr>
-  {% endif %}
-  {% endfor %}
-  </tbody>
-</table>
-
-<h2>뉴스 헤드라인</h2>
-<section id="news">
-{% for n in news %}
-  <div><b>{{ n.name }}</b>
-    {% if n.status == 'failed' %}<span class="badge failed">수집 실패</span>
-      <span class="mut">{{ n.error }}{% if n.ok_at %} (마지막 성공 {{ n.ok_at | kst }}){% endif %}</span>
-    {% elif n.status == 'none' %}<span class="badge none">데이터 없음</span>
-    {% else %}<span class="mut">{{ n.ok_at | kst }}</span>{% endif %}
-  </div>
-  <ul class="news">
-  {% for i in n.headlines %}
-    <li>{% if i.link %}<a href="{{ i.link }}" target="_blank" rel="noopener noreferrer">{{ i.title }}</a>{% else %}{{ i.title }}{% endif %}
-      {% if i.source %}<span class="mut"> · {{ i.source }}</span>{% endif %}</li>
-  {% endfor %}
-  </ul>
-{% endfor %}
 </section>
 {% endblock %}

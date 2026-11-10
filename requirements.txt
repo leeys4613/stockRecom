@@ -19,6 +19,10 @@ anthropic
 pydantic
 pandas
 
+# Web push (알림). cryptography 50+ 는 Intel macOS 휠이 없어 <50 으로 고정
+cryptography<50
+pywebpush
+
 # Config / calendar
 python-dotenv
 holidays
