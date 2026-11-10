@@ -209,4 +209,10 @@ def stock_series(conn_factory, code, days=90, interval="1d", compare=False, leve
                     chg=(imap[common[-1][0]] / base_i - 1) * 100, stock_chg=(common[-1][1] / base_s - 1) * 100)
         except Exception:
             pass       # 지수 선을 못 그려도 종목 차트는 보여준다
-    return _pack(pts, m["name"], "", None, interval, days, err, **extra)
+    out = _pack(pts, m["name"], "", None, interval, days, err, **extra)
+    if interval != "5m":       # 최신 일봉이 아직 없으면(Yahoo가 종가를 비워 보내는 경우 등) 숨기지 않고 알린다
+        import calendar_kr
+        expected = calendar_kr.last_completed_trading_day().isoformat()
+        out["behind"] = out["as_of"] < expected if interval == "1d" else None
+        out["expected"] = expected
+    return out

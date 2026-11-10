@@ -79,6 +79,7 @@
     }
     if (lv.length) box.appendChild(div('chart-sum mut', '파란 점선 = 지지선, 빨간 점선 = 저항선(일봉 기준으로 기계적으로 계산한 값, 보장 아님)'));
     if (d.note) box.appendChild(div('chart-sum mut', d.note));
+    if (d.behind) box.appendChild(div('chart-sum warn', '최신 일봉(' + d.expected + ')이 아직 반영되지 않아 ' + d.as_of + '까지만 표시합니다. 카드의 현재가와 다를 수 있습니다(데이터 제공처 지연).'));
     if (d.stale) box.appendChild(div('chart-sum warn', '최신 데이터를 받지 못해 저장된 데이터로 그렸습니다.'));
   }
 

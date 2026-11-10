@@ -198,3 +198,30 @@ def test_cards_on_watchlist_and_screener_have_chart_details():
     assert 'class="stock-chart" data-code="005930" data-compare="0" data-levels="1"' in wl and '<script src="/static/chart.js">' in wl
     assert 'class="stock-chart" data-code="000001" data-compare="1" data-levels="0"' in sc and '<script src="/static/chart.js">' in sc
     assert "매도" not in wl
+
+
+def test_last_completed_trading_day_rules():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    import calendar_kr as K
+    z = ZoneInfo("Asia/Seoul")
+    at = lambda s: K.last_completed_trading_day(datetime.fromisoformat(s).replace(tzinfo=z))  # noqa: E731
+    assert at("2026-11-10 16:00") == date(2026, 11, 10)         # 장 마감 후: 오늘(화) 일봉이 확정돼야 한다
+    assert at("2026-11-10 14:00") == date(2026, 11, 9)          # 장중: 직전 거래일
+    assert at("2026-11-11 00:05") == date(2026, 11, 10)         # 자정 직후: 전날
+    assert at("2026-11-14 12:00") == date(2026, 11, 13)         # 주말: 금요일
+
+
+def test_stock_chart_flags_when_latest_daily_bar_is_missing():
+    seed_master("005930")
+    old = [((date.today() - timedelta(days=125 - i)).isoformat(), 100.0 + i) for i in range(65)]      # 마지막 일봉이 약 2달 전
+    d = C.stock_series(db.session, "005930", 365, "1d", fetcher=lambda sym, interval=None: old)
+    assert d["behind"] is True and d["expected"] and d["as_of"] < d["expected"]
+    with db.session() as conn:                                              # 12시간 캐시를 비워 새 데이터를 받게 한다
+        conn.execute("DELETE FROM price_history")
+        conn.execute("DELETE FROM chart_fetch")
+    fresh = C.stock_series(db.session, "005930", 365, "1d", fetcher=lambda sym, interval=None: daily())
+    assert fresh["behind"] is False or fresh["behind"] is None
+    mins = [(f"11-07 {h:02d}:{m:02d}", 100.0 + h) for h in range(9, 16) for m in range(0, 60, 5)]
+    assert "behind" not in C.stock_series(db.session, "005930", 1, "5m", fetcher=lambda sym, interval=None: mins)   # 분봉은 판단하지 않는다

@@ -13,6 +13,19 @@ def today_kst():
     return datetime.now(ZoneInfo(config.TIMEZONE)).date()
 
 
+def last_completed_trading_day(now=None):
+    """지금 시점에 일봉이 확정됐어야 하는 가장 최근 거래일. 장 마감 후(15:40 이후)의 거래일이면 오늘, 아니면 오늘 이전의 마지막 거래일."""
+    from datetime import timedelta
+
+    now = now or datetime.now(ZoneInfo(config.TIMEZONE))
+    d = now.date()
+    if not (is_trading_day(d) and (now.hour, now.minute) >= (15, 40)):
+        d -= timedelta(days=1)
+        while not is_trading_day(d):
+            d -= timedelta(days=1)
+    return d
+
+
 def is_trading_day(d: date) -> bool:
     if d.weekday() >= 5:
         return False
