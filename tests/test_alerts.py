@@ -174,10 +174,11 @@ def test_app_name_and_icons_match_manifest():
         m = json.loads(c.get("/manifest.webmanifest").text)
         html = c.get("/").text
     assert m["name"] == "내손안의주식" and m["short_name"] == "내손안의주식"
+    assert 'rel="manifest" href="/manifest.webmanifest?v=' in html and "K-MacroSight" not in html     # 매니페스트 주소에 버전을 붙여 옛 사본을 피한다
     assert "<title>내손안의주식</title>" in html and "<h1>내손안의주식</h1>" in html and "MacroSight" not in html
     root = Path(main.__file__).parent / "static"
     for icon in m["icons"]:                                              # 선언한 크기와 실제 PNG 크기가 같아야 한다
-        data = (root / icon["src"].split("/static/")[1]).read_bytes()
+        data = (root / icon["src"].split("/static/")[1].split("?")[0]).read_bytes()
         assert data[:8] == b"\x89PNG\r\n\x1a\n"
         w, h = struct.unpack(">II", data[16:24])
         assert f"{w}x{h}" == icon["sizes"]

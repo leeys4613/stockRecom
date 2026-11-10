@@ -1,6 +1,6 @@
 // 네트워크 우선: 항상 최신 화면을 시도하고, 연결이 안 될 때만 마지막으로 본 화면을 보여준다.
 // (화면 하단의 "화면 생성" 시각으로 오래된 화면인지 알 수 있다)
-const CACHE = 'kms-v5';
+const CACHE = 'kms-v6';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -22,7 +22,7 @@ self.addEventListener('fetch', (e) => {
   // /health(온라인 판별)와 /watchlist/search(자동완성)는 캐시/가로채기 대상에서 제외한다
   if (url.origin !== self.location.origin || url.pathname === '/sw.js' || url.pathname === '/health' || url.pathname === '/watchlist/search' || url.pathname.startsWith('/push/')) return;
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })     // 브라우저 HTTP 캐시의 옛 사본(이름·아이콘 포함)을 쓰지 않고 항상 서버에 확인한다
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
