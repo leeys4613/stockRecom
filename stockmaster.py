@@ -55,11 +55,16 @@ def _insert(conn, rows, source):
 
 
 def seed_if_empty(conn):
-    if conn.execute("SELECT COUNT(*) FROM stock_master").fetchone()[0] or not SEED_PATH.exists():
+    """기본 목록 적재. 비어 있으면 전부, 기본 목록만 쓰는 중이면 새로 추가된 종목만 보충한다(업로드한 전체 목록은 건드리지 않음)."""
+    if not SEED_PATH.exists():
+        return
+    have = {r[0]: r[1] for r in conn.execute("SELECT code, source FROM stock_master")}
+    if have and any(s != "seed" for s in have.values()):
         return
     with open(SEED_PATH, encoding="utf-8", newline="") as f:
-        rows = [r for r in csv.DictReader(f) if CODE_RE.match(r["code"]) and r["market"] in MARKETS]
-    _insert(conn, rows, "seed")
+        rows = [r for r in csv.DictReader(f) if CODE_RE.match(r["code"]) and r["market"] in MARKETS and r["code"] not in have]
+    if rows:
+        _insert(conn, rows, "seed")
 
 
 def replace_all(conn, rows, source="upload"):

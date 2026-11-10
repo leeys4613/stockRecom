@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import db
+import stockmaster
 import main
 import stockmaster as sm
 from collectors import reports
@@ -35,7 +36,7 @@ def test_seed_loaded_once_and_survives_reinit():
     db.init_db()
     with db.session() as conn:
         i = sm.info(conn)
-    assert i["count"] == 40 and i["source"] == "seed"
+    assert i["count"] == 46 and i["source"] == "seed"
 
 
 # ---------- 검색 ----------
@@ -73,7 +74,7 @@ def test_search_special_characters_are_literal_and_safe(q):
     db.init_db()
     with db.session() as conn:
         assert sm.search(conn, q) == []              # 와일드카드로 해석되어 전체가 나오면 안 됨
-        assert sm.info(conn)["count"] == 40          # 테이블 무사
+        assert sm.info(conn)["count"] == 46          # 테이블 무사
 
 
 # ---------- 업로드 파싱 ----------
@@ -147,7 +148,7 @@ def test_replace_all_requires_enough_rows_and_keeps_old_data_on_failure():
     with db.session() as conn:
         with pytest.raises(sm.StockMasterError, match="최소"):
             sm.replace_all(conn, [dict(code="000001", name="a", market="KS")] * 5)
-        assert sm.info(conn)["count"] == 40          # 실패해도 기존 목록 유지
+        assert sm.info(conn)["count"] == 46          # 실패해도 기존 목록 유지
         n = sm.replace_all(conn, sm.parse_file("a.xls", kind_html(kind_rows())))
         assert n == 150 and sm.info(conn)["source"] == "upload"
         assert names(conn, "삼성전자") == []          # 업로드가 기본 목록을 대체
@@ -272,7 +273,7 @@ def test_watchlist_page_has_autocomplete_and_master_info():
     with client() as c:
         html = c.get("/watchlist").text
     assert 'id="q"' in html and 'role="combobox"' in html and "/watchlist/search?q=" in html
-    assert "종목 목록 40개 (기본 내장)" in html and 'type="file"' in html and "자동으로 접속하지 않습니다" in html
+    assert "종목 목록 46개 (기본 내장)" in html and 'type="file"' in html and "자동으로 접속하지 않습니다" in html
     assert "textContent" in html and "innerHTML = ''" in html and "innerHTML =" not in html.replace("innerHTML = ''", "")  # 응답은 textContent 로만 삽입
 
 
@@ -296,3 +297,16 @@ def test_service_worker_bypasses_search_endpoint():
     with client() as c:
         sw = c.get("/sw.js").text
     assert "/watchlist/search" in sw and "kms-v4" in sw
+
+
+def test_seed_topup_adds_new_seed_stocks_but_not_over_uploaded_list():
+    db.init_db()
+    with db.session() as conn:
+        assert any(c["code"] == "018260" for c in stockmaster.search(conn, "삼성에스디에스"))
+        conn.execute("DELETE FROM stock_master WHERE code='018260'")           # 이전 버전 기본 목록 상태를 흉내
+        stockmaster.seed_if_empty(conn)
+        assert stockmaster.get(conn, "018260")["name"] == "삼성에스디에스"        # 기본 목록만 쓰는 중이면 보충
+        conn.execute("UPDATE stock_master SET source='upload' WHERE code='005930'")
+        conn.execute("DELETE FROM stock_master WHERE code='018260'")
+        stockmaster.seed_if_empty(conn)
+        assert stockmaster.get(conn, "018260") is None                          # 업로드 목록이 섞여 있으면 건드리지 않음
