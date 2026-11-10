@@ -3,6 +3,7 @@
 <h2>지수 대비 강세 종목</h2>
 <p class="mut">최근 3~10거래일에 소속 지수(코스피 종목은 KOSPI, 코스닥 종목은 KOSDAQ)보다 <b>더 오른</b> 종목을 찾습니다.
   조건: 3일·5일·10일 수익률이 모두 지수보다 높고, 최근 5거래일 중 {{ cfg.SCREEN_BEAT_DAYS }}일 이상 지수보다 더 올랐으며,
+  최근 10거래일 중 <b>하루에 {{ "{:.0f}".format(cfg.SCREEN_MAX_DAY_JUMP) }}% 이상 오른 날이 없고</b>(한 방 급등으로 초과수익이 만들어진 종목 제외),
   시가총액 {{ "{:,.0f}".format(cfg.SCREEN_MIN_MCAP / 1e8) }}억원 이상·20일 평균 거래대금 {{ "{:,.0f}".format(cfg.SCREEN_MIN_VALUE20 / 1e8) }}억원 이상입니다.
   뉴스로 강세의 배경을 확인할 수 없는("뚜렷한 배경 없음") 종목은 뺍니다.
   <b>이미 일어난 결과를 걸러 보여줄 뿐 앞으로의 상승을 예측하지 않으며</b>, 많이 오른 종목은 되돌림이 나오기도 합니다. 투자 권유가 아닙니다.</p>
@@ -20,7 +21,7 @@
 <div class="card" id="screen-summary">
   <div><b>기준일 {{ run.asof }}</b> <span class="mut">· 코스피와 코스닥을 따로 선정합니다(각각 자기 지수와 비교)</span></div>
   <div class="mut" style="margin-top:6px">대상 {{ run.universe_n }}종목 중 {{ run.loaded_n }}개 조회 · 조회 실패/기준일 데이터 없음 {{ run.failed_n }}개(거래정지 등 포함)
-    · 강세 조건 통과 {{ run.passed_n }}개{% if run.pool_n is not none %} → 시가총액 조건 후 {{ run.pool_n }}개{% if run.ai_status == 'ok' %} → 배경 불명 {{ run.nobg_n }}개 제외 → 추천 {{ run.final_n }}개{% else %} → 추천 {{ run.final_n }}개{% endif %}{% else %} → 시가총액 조건 후 {{ run.final_n }}개{% endif %}{% if run.mcap_missing_n %} · 시가총액 확인 실패로 제외 {{ run.mcap_missing_n }}개{% endif %}</div>
+    {% if run.jump_n %}· 하루 {{ "{:.0f}".format(cfg.SCREEN_MAX_DAY_JUMP) }}% 이상 급등일이 있어 제외 {{ run.jump_n }}개 {% endif %}· 강세 조건 통과 {{ run.passed_n }}개{% if run.pool_n is not none %} → 시가총액 조건 후 {{ run.pool_n }}개{% if run.ai_status == 'ok' %} → 배경 불명 {{ run.nobg_n }}개 제외 → 추천 {{ run.final_n }}개{% else %} → 추천 {{ run.final_n }}개{% endif %}{% else %} → 시가총액 조건 후 {{ run.final_n }}개{% endif %}{% if run.mcap_missing_n %} · 시가총액 확인 실패로 제외 {{ run.mcap_missing_n }}개{% endif %}</div>
 </div>
 
 <div style="margin:8px 0"><a href="#sec-KS" style="color:inherit">코스피</a> · <a href="#sec-KQ" style="color:inherit">코스닥</a>

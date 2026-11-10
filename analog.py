@@ -59,6 +59,27 @@ def dist(vals):
                 up=sum(1 for v in vals if v > 0) / len(vals) * 100, p10=_pct(vals, 0.10), p90=_pct(vals, 0.90))
 
 
+VERDICT_GAP = 7.0      # 오른 비율이 기준선보다 이만큼(%p) 이상 차이 나야 "좋았음/나빴음"
+VERDICT_MIN_N = 30     # 표본이 이보다 적으면 판단하지 않고 "표본 적음"
+
+
+def verdict(d, base):
+    """등급의 이후 수익률 분포(d)를 기준선(base)과 견줘 쉬운 말로 요약한다.
+
+    기준: '그 기간 뒤에 올라 있던 비율'을 평소(모든 날)와 비교. 표본이 적으면 판단 보류.
+    """
+    if not d.get("n"):
+        return dict(label="표본 없음", cls="none", diff=None)
+    diff = d["up"] - base["up"]
+    if d["n"] < VERDICT_MIN_N:
+        return dict(label="표본 적음 · 참고만", cls="none", diff=diff)
+    if diff >= VERDICT_GAP:
+        return dict(label="평소보다 좋았음", cls="fresh", diff=diff)
+    if diff <= -VERDICT_GAP:
+        return dict(label="평소보다 나빴음", cls="failed", diff=diff)
+    return dict(label="평소와 비슷", cls="none", diff=diff)
+
+
 def _episodes(rows, sep=None):
     """같은 신호가 sep 거래일 이내로 이어지면 한 에피소드. 각 에피소드의 첫 날 행을 돌려준다."""
     sep = sep or config.ANALOG_SEP_DAYS

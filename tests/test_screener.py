@@ -495,3 +495,51 @@ def test_review_counts_only_last_run_per_asof_date():
         conn.execute("UPDATE screen_items SET fwd5=1.0, fwd5_ex=1.0")
         rv = S.review(conn)
     assert rv["n_runs"] == 2 and rv["n_items"] == 2 and rv["overall"]["d5"]["n"] == 2
+
+
+# ---------- 하루 급등일 제외 ----------
+def jump_bars(jump=20.0, n=25):
+    """최근 5일 동안 매일 +1%인데 그중 하루만 jump% 오른 종목."""
+    out, c = [], 10_000.0
+    for i in range(n):
+        d = jump if i == n - 3 else (1.0 if i >= n - 6 else 0.2)
+        out.append((f"D{i:03d}", c, 10_000_000))
+        c *= 1 + d / 100
+    return out
+
+
+def test_one_day_jump_is_detected_and_excluded_from_passes():
+    idx = IDX()
+    j = S.evaluate(jump_bars(20.0), idx)
+    assert j["max_day"] == pytest.approx(20.0, abs=0.5) and S.has_jump(j) and S.passes_base(j) and not S.passes(j)
+    calm = S.evaluate(jump_bars(1.0), idx)
+    assert calm["max_day"] < config.SCREEN_MAX_DAY_JUMP and S.passes(calm)
+    edge = S.evaluate(jump_bars(config.SCREEN_MAX_DAY_JUMP), idx)
+    assert S.has_jump(edge)                                                    # 경계값(15%)은 제외
+
+
+def test_run_excludes_jumpers_counts_them_and_tracks_for_review():
+    seed_master()
+    data = {"000001.KS": mk(d2=2.0), "000002.KS": jump_bars(20.0), "000005.KS": mk(d2=1.5)}
+    chunk = lambda syms: {s: v for s, v in data.items() if s in syms}  # noqa: E731
+    S.run(db.session, chunk, lambda s: idx_bars(), lambda s: 2e12, delay=0, ai=False)
+    with db.session() as conn:
+        _, run, items = S.latest(conn)
+        st = {r["code"]: r["status"] for r in conn.execute("SELECT code,status FROM screen_items")}
+    assert "000002" not in [i["code"] for i in items]                          # 화면에는 안 나온다
+    assert run["jump_n"] == 1 and st["000002"] == "jump"                       # 개수는 알리고, 성과 비교용으로 기록
+    assert {i["code"] for i in items} == {"000001", "000005"}
+    assert run["passed_n"] == 2                                                # 통과 수에는 급등 종목이 들어가지 않는다
+    with TestClient(main.app) as c:
+        html = c.get("/screener").text
+    assert "하루 15% 이상 급등일이 있어 제외 1개" in html and "하루에 15% 이상 오른 날이 없고" in html and "강세대형" in html
+
+
+def test_review_labels_jump_group():
+    rid = insert_run("2026-11-02", [("000001", "KS", "kept", {}), ("000002", "KS", "jump", {})])
+    with db.session() as conn:
+        conn.execute("UPDATE screen_items SET fwd5=1.0, fwd5_ex=-4.0 WHERE code='000002'")
+        conn.execute("UPDATE screen_items SET fwd5=1.0, fwd5_ex=2.0 WHERE code='000001'")
+        rv = S.review(conn)
+    g = {i["label"]: i for i in rv["groups"][0]["items"]}
+    assert g["하루 급등(15%+)일 포함으로 제외"]["d5"]["mean"] == -4.0 and g["추천(화면에 표시)"]["d5"]["mean"] == 2.0

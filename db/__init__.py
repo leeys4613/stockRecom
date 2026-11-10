@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS screen_runs (
     ai_status TEXT,         -- 2단계 AI 보강: ok / failed / skipped(후보 없음)
     ai_error TEXT,
     pool_n INTEGER,         -- 시가총액 조건까지 통과해 AI 해석을 받은 종목 수
-    nobg_n INTEGER          -- 그중 "뚜렷한 배경 없음"으로 추천에서 뺀 종목 수
+    nobg_n INTEGER,         -- 그중 "뚜렷한 배경 없음"으로 추천에서 뺀 종목 수
+    jump_n INTEGER          -- 다른 조건은 통과했지만 하루 급등일(15%+)이 있어 제외한 종목 수
 );
 CREATE TABLE IF NOT EXISTS screen_items (
     run_id INTEGER NOT NULL REFERENCES screen_runs(id),
@@ -211,7 +212,7 @@ def _migrate(conn):
     for col, typ in (("alert_on", "INTEGER NOT NULL DEFAULT 0"), ("alert_min", "REAL"), ("alert_fired", "INTEGER NOT NULL DEFAULT 0")):
         if col not in wl_cols:
             conn.execute(f"ALTER TABLE watchlist ADD COLUMN {col} {typ}")
-    for table, adds in (("screen_runs", (("pool_n", "INTEGER"), ("nobg_n", "INTEGER"))),
+    for table, adds in (("screen_runs", (("pool_n", "INTEGER"), ("nobg_n", "INTEGER"), ("jump_n", "INTEGER"))),
                         ("screen_items", (("r10", "REAL"), ("ex10", "REAL")))):
         have = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})")]
         for col, typ in adds:

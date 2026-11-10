@@ -91,16 +91,27 @@ def evaluate(bars, idx):
         d = bars[i][0]
         if d in idx["daily"] and (c[i] / c[i - 1] - 1) * 100 > idx["daily"][d]:
             beat += 1
+    max_day = max((c[i] / c[i - 1] - 1) * 100 for i in range(len(c) - 10, len(c)))      # 최근 10거래일 중 가장 큰 하루 상승률
     value20 = sum(ci * vi for ci, vi in zip(c[-20:], v[-20:])) / 20
     avg20 = sum(v[-20:]) / 20
     return dict(price=c[-1], r3=r3, r5=r5, r10=r10, ex3=r3 - idx["r3"], ex5=r5 - idx["r5"], ex10=r10 - idx["r10"],
-                beat_days=beat, value20=value20,
+                beat_days=beat, max_day=max_day, value20=value20,
                 vol_ratio=(sum(v[-5:]) / 5) / avg20 if avg20 else None)
 
 
-def passes(m):
+def passes_base(m):
+    """급등일 조건을 뺀 나머지 기본 조건."""
     return (m["price"] >= config.SCREEN_MIN_PRICE and m["value20"] >= config.SCREEN_MIN_VALUE20
             and m["ex3"] > 0 and m["ex5"] > 0 and m["ex10"] > 0 and m["beat_days"] >= config.SCREEN_BEAT_DAYS)
+
+
+def has_jump(m):
+    """최근 10거래일 중 하루에 SCREEN_MAX_DAY_JUMP% 이상 오른 날이 있다 — 그 하루가 초과수익을 만들었을 수 있다."""
+    return m["max_day"] >= config.SCREEN_MAX_DAY_JUMP - 1e-6      # 부동소수점 오차로 정확히 15%인 날이 14.9999…가 되는 것을 막는다
+
+
+def passes(m):
+    return passes_base(m) and not has_jump(m)
 
 
 def rank_key(m):
@@ -154,7 +165,7 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
         asof = max(i["asof"] for i in idx.values())
         by_sym = {f"{u['code']}.{u['market']}": u for u in universe}
         syms = list(by_sym)
-        loaded, failed, cands = 0, 0, []
+        loaded, failed, cands, jumped = 0, 0, [], []
         allm = {}       # 평가가 끝난 모든 종목의 지표 (대장주 비교에 쓴다)
         for i in range(0, len(syms), config.SCREEN_CHUNK):
             part = syms[i:i + config.SCREEN_CHUNK]
@@ -172,8 +183,8 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
                     continue
                 loaded += 1
                 allm[u["code"]] = m
-                if passes(m):
-                    cands.append(dict(u, **m, flags=flags_for(m)))
+                if passes_base(m):
+                    (jumped if has_jump(m) else cands).append(dict(u, **m, flags=flags_for(m)))
         if universe and loaded < len(universe) * config.SCREEN_MIN_LOAD_RATIO:
             # 데이터 대부분을 못 받은 결과는 "강세 종목 없음"처럼 보이면 안 되므로 실패로 기록한다
             return _save_failed(conn_factory, len(universe),
@@ -198,6 +209,22 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
             if mc >= config.SCREEN_MIN_MCAP:
                 final.append(dict(c, mcap=mc))
                 in_pool[c["market"]] += 1
+        # 하루 급등으로 제외한 종목 중 상위 일부는 성과 비교용으로만 기록한다(화면에는 안 나옴)
+        jump_track = []
+        jumped.sort(key=rank_key)
+        for c in jumped:
+            if len(jump_track) >= config.SCREEN_JUMP_TRACK:
+                break
+            with conn_factory() as conn:
+                cached = conn.execute("SELECT 1 FROM mcap_cache WHERE code=?", (c["code"],)).fetchone()
+                try:
+                    mc = _mcap(conn, c["code"], f"{c['code']}.{c['market']}", mcap_fetcher)
+                except Exception:
+                    mc = None
+            if not cached and delay:
+                time.sleep(delay)
+            if mc and mc >= config.SCREEN_MIN_MCAP:
+                jump_track.append(dict(c, mcap=mc, rank=0, status="jump"))
         # 2단계: AI 가 뉴스 근거로 강세 배경을 해석한다. 배경을 확인할 수 없는("뚜렷한 배경 없음") 종목은 추천에서 뺀다
         ai_status, ai_error, notes, dropped = None, None, {}, 0
         kept = final
@@ -224,10 +251,10 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
         with conn_factory() as conn:
             rid = conn.execute(
                 "INSERT INTO screen_runs (created_at,status,asof,index_ret,universe_n,loaded_n,failed_n,passed_n,mcap_missing_n,final_n,"
-                "ai_status,ai_error,pool_n,nobg_n) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "ai_status,ai_error,pool_n,nobg_n,jump_n) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (now_iso(), "ok", asof,
                  json.dumps({m: dict(r3=round(v["r3"], 2), r5=round(v["r5"], 2), r10=round(v["r10"], 2)) for m, v in idx.items()}),
-                 len(universe), loaded, failed, len(cands), missing, len(kept), ai_status, ai_error, len(final), dropped)).lastrowid
+                 len(universe), loaded, failed, len(cands), missing, len(kept), ai_status, ai_error, len(final), dropped, len(jumped))).lastrowid
             conn.executemany(
                 "INSERT INTO screen_items (run_id,rank,code,name,market,price,r3,r5,r10,ex3,ex5,ex10,beat_days,value20,mcap,vol_ratio,flags,ai,leader,status) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -237,7 +264,7 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
                   json.dumps(notes[c["code"]], ensure_ascii=False) if c["code"] in notes else None,
                   json.dumps(leaders[c["code"]], ensure_ascii=False) if leaders.get(c["code"]) else None,
                   c.get("status", "kept"))
-                 for n, c in ((c["rank"], c) for c in kept + others)])
+                 for n, c in ((c["rank"], c) for c in kept + others + jump_track)])
         return rid
     finally:
         _lock.release()
@@ -328,7 +355,8 @@ def review(conn):
         return None if t is None else "뉴스 긍정(+1 이상)" if t >= 1 else "뉴스 부정(-1 이하)" if t <= -1 else "뉴스 중립(0)"
 
     specs = [
-        ("추천 여부", lambda r: dict(kept="추천(화면에 표시)", nobg="AI가 배경 불명으로 제외", cut="순위권 밖(시장별 상위 밖)").get(r["status"])),
+        ("추천 여부", lambda r: dict(kept="추천(화면에 표시)", nobg="AI가 배경 불명으로 제외", cut="순위권 밖(시장별 상위 밖)",
+                                                       jump="하루 급등(15%+)일 포함으로 제외").get(r["status"])),
         ("시장", lambda r: "코스피" if r["market"] == "KS" else "코스닥"),
         ("강세 배경(AI)", lambda r: (r["ai"] or {}).get("reason_type")),
         ("재료 성격(AI)", lambda r: (r["ai"] or {}).get("catalyst_kind")),

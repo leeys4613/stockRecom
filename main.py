@@ -120,10 +120,12 @@ def analog_page(request: Request):
         ks, vx = history.load(conn, "KOSPI"), history.load(conn, "VIX")
         live = {r["key"]: r["value"] for r in macro.latest(conn) if r["freshness"] == "fresh" and r["value"] is not None}
     rows = analog.build_rows(ks, vx) if ks and vx else []
-    ctx = dict(active="analog", ready=bool(rows), sep=config.ANALOG_SEP_DAYS,
+    ctx = dict(active="analog", ready=bool(rows), sep=config.ANALOG_SEP_DAYS, gap=analog.VERDICT_GAP,
                span=dict(start=rows[0]["date"] if rows else "-", end=ks[-1][0] if ks else "-", n=len(rows)))
     if rows:
         bt, base = analog.backtest(rows)
+        for r in bt:       # 쉬운 말 요약용: 첫 신호일 기준 판정(일주일/한 달)
+            r["v"] = {h: analog.verdict(r["ep"][h], base[h]) for h in analog.HORIZONS}
         keys = ("VIX", "VIXAVG", "KOSPI10D", "KOSPIDD")
         if all(k in live for k in keys):
             cur = dict(vix=live["VIX"], vixavg=live["VIXAVG"], k10=live["KOSPI10D"], kdd=live["KOSPIDD"])
@@ -134,7 +136,8 @@ def analog_page(request: Request):
         sig = sentiment.assess(vix=cur["vix"], vix_avg=cur["vixavg"], kospi_10d=cur["k10"], kospi_dd=cur["kdd"])
         pool = [r for r in rows if r["i"] < rows[-1]["i"] - config.ANALOG_SEP_DAYS]      # 지금과 겹치는 최근 구간은 제외
         near, near_sum = analog.nearest(pool, cur)
-        ctx.update(bt=bt, base=base, cur=cur, cur_src=cur_src, cur_label=sig["label"] if sig else "판단 불가", near=near, near_sum=near_sum)
+        near_v = {h: analog.verdict(near_sum[h], base[h]) for h in analog.HORIZONS}
+        ctx.update(bt=bt, base=base, cur=cur, cur_src=cur_src, cur_label=sig["label"] if sig else "판단 불가", near=near, near_sum=near_sum, near_v=near_v)
     return templates.TemplateResponse(request, "analog.html", ctx)
 
 

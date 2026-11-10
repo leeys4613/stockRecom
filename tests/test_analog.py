@@ -153,3 +153,26 @@ def test_refresh_route_schedules_background_job(monkeypatch):
     with TestClient(main.app) as c:
         assert c.post("/analog/refresh", follow_redirects=False).status_code == 303
     assert calls == [1]
+
+
+def test_verdict_compares_up_rate_to_baseline_and_withholds_on_small_samples():
+    base = dict(n=6000, up=57.0)
+    mk = lambda up, n=40: dict(n=n, up=up)  # noqa: E731
+    assert A.verdict(mk(66), base)["label"] == "평소보다 좋았음" and A.verdict(mk(66), base)["cls"] == "fresh"
+    assert A.verdict(mk(48), base)["label"] == "평소보다 나빴음" and A.verdict(mk(48), base)["cls"] == "failed"
+    assert A.verdict(mk(60), base)["label"] == "평소와 비슷"
+    assert A.verdict(mk(57 + A.VERDICT_GAP), base)["label"] == "평소보다 좋았음"           # 경계값은 포함
+    assert A.verdict(mk(90, n=A.VERDICT_MIN_N - 1), base)["label"].startswith("표본 적음")   # 표본이 적으면 좋/나쁨을 말하지 않는다
+    assert A.verdict(dict(n=0), base)["label"] == "표본 없음"
+
+
+def test_page_uses_plain_language_with_glance_summary():
+    db.init_db()
+    history.refresh(db.session, fake_fetcher())
+    with TestClient(main.app) as c:
+        html = c.get("/analog").text
+    assert 'id="how-to-read"' in html and "오른 비율" in html and "나빴던 경우" in html and "보통 결과" in html
+    assert 'id="bt-glance"' in html and "한눈에 보기" in html and ("평소보다" in html or "평소와 비슷" in html or "표본 적음" in html)
+    assert "일주일 뒤" in html and "한 달 뒤" in html and 'class="rate"' in html
+    assert "중앙값" not in html and "에피소드" not in html and "하위10%" not in html          # 통계 용어를 쓰지 않는다
+    assert "매도" not in html
