@@ -146,7 +146,7 @@ def _market_of(v):
         return None
     if "코스닥" in s or "kosdaq" in s or s in ("kq", "ksq"):
         return "KQ"
-    if "유가증권" in s or "코스피" in s or "kospi" in s or s in ("ks", "stk"):
+    if s.startswith("유가") or "코스피" in s or "kospi" in s or s in ("ks", "stk"):   # KIND 는 "유가"로 줄여 쓴다
         return "KS"
     return None  # 코넥스·기타는 Yahoo(.KS/.KQ)로 조회할 수 없어 제외
 

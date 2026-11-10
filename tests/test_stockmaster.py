@@ -310,3 +310,8 @@ def test_seed_topup_adds_new_seed_stocks_but_not_over_uploaded_list():
         conn.execute("DELETE FROM stock_master WHERE code='018260'")
         stockmaster.seed_if_empty(conn)
         assert stockmaster.get(conn, "018260") is None                          # 업로드 목록이 섞여 있으면 건드리지 않음
+
+
+def test_market_of_accepts_kind_abbreviation():
+    assert stockmaster._market_of("유가") == "KS" and stockmaster._market_of("유가증권시장") == "KS"
+    assert stockmaster._market_of("코스닥") == "KQ" and stockmaster._market_of("코넥스") is None
