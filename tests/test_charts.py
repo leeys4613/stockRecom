@@ -112,3 +112,89 @@ def test_routes_status_codes_and_page_markup(monkeypatch):
     import re
     assert re.search(r'data-key="SOX"[^>]*data-chart="1"', html) and not re.search(r'data-key="AI10D"[^>]*data-chart', html)
     assert re.search(r'data-key="KOSPI10D"[^>]*data-daily="1"', html) and not re.search(r'data-key="SOX"[^>]*data-daily', html)
+
+
+# ---------- 종목 차트 (관심종목·강세 종목) ----------
+def seed_master(*codes):
+    db.init_db()
+    names = {"005930": ("삼성전자", "KS"), "247540": ("에코프로비엠", "KQ")}
+    with db.session() as conn:
+        for c in codes:
+            n, m = names[c]
+            conn.execute("INSERT OR REPLACE INTO stock_master (code,name,market,name_norm,choseong,source,updated_at) VALUES (?,?,?,?,?,?,?)",
+                         (c, n, m, n, n, "t", "x"))
+
+
+def test_stock_series_only_for_known_stocks_and_uses_own_symbol():
+    seed_master("005930")
+    seen = []
+    f = lambda sym, interval=None: seen.append(sym) or daily()  # noqa: E731
+    d = C.stock_series(db.session, "005930", 90, "1d", fetcher=f)
+    assert d["name"] == "삼성전자" and d["code"] == "005930" and d["market"] == "KS"
+    assert seen == ["005930.KS"] and "index" not in d and d["levels"] is None
+    with pytest.raises(C.ChartError):
+        C.stock_series(db.session, "999999", 90, "1d", fetcher=f)                    # 종목 목록에 없는 코드는 조회하지 않는다
+    assert seen == ["005930.KS"]
+
+
+def test_compare_overlays_market_index_rebased_to_the_stock_start():
+    seed_master("005930", "247540")
+    rows = {"005930.KS": daily(300, 100.0, 1.0), "^KS11": daily(300, 5000.0, 5.0), "247540.KQ": daily(300, 100.0, 1.0), "^KQ11": daily(300, 700.0, 1.0)}
+    f = lambda sym, interval=None: rows[sym]  # noqa: E731
+    d = C.stock_series(db.session, "005930", 90, "1d", compare=True, fetcher=f)
+    ix = d["index"]
+    assert ix["name"] == "KOSPI" and ix["points"][0][1] == pytest.approx(d["points"][0][1])        # 시작점이 같게 맞춰진다
+    assert len(ix["points"]) == len(d["points"]) and ix["chg"] > 0 and ix["stock_chg"] > 0
+    assert ix["stock_chg"] == pytest.approx((d["points"][-1][1] / d["points"][0][1] - 1) * 100)
+    assert C.stock_series(db.session, "247540", 90, "1d", compare=True, fetcher=f)["index"]["name"] == "KOSDAQ"   # 코스닥은 KOSDAQ 과 비교
+    bad = lambda sym, interval=None: rows[sym] if sym == "005930.KS" else (_ for _ in ()).throw(RuntimeError("idx down"))  # noqa: E731
+    with db.session() as conn:
+        conn.execute("DELETE FROM price_history WHERE symbol='^KS11'")
+        conn.execute("DELETE FROM chart_fetch WHERE symbol='^KS11'")
+    d2 = C.stock_series(db.session, "005930", 90, "1d", compare=True, fetcher=bad)
+    assert "index" not in d2 and d2["points"]                                          # 지수 선을 못 받아도 종목 차트는 나온다
+
+
+def test_levels_come_from_latest_stock_view_for_daily_only():
+    import json
+
+    import stockviews
+    seed_master("005930")
+    lv = dict(supports=[dict(price=95000), dict(price=90000)], resistances=[dict(price=110000)])
+    with db.session() as conn:
+        stockviews.save(conn, [stockviews.make_row("005930", None, dict(
+            crowd_effect=0, crowd_score=50, crowd_evidence=[], crowd_note=None, sector_effect=0, sector_score=50, sector_note=None,
+            score=50, comment="c"), [], {"levels": lv})])
+    f = lambda sym, interval=None: daily()  # noqa: E731
+    d = C.stock_series(db.session, "005930", 90, "1d", levels=True, fetcher=f)
+    assert d["levels"] == dict(supports=[95000, 90000], resistances=[110000])
+    assert C.stock_series(db.session, "005930", 90, "1d", levels=False, fetcher=f)["levels"] is None
+    wk = lambda sym, interval=None: [((date.today() - timedelta(weeks=300 - i)).isoformat(), 100.0 + i) for i in range(300)]  # noqa: E731
+    assert C.stock_series(db.session, "005930", 1095, "1wk", levels=True, fetcher=wk)["levels"] is None   # 일봉이 아니면 선을 그리지 않는다
+
+
+def test_stock_chart_route_and_card_markup(monkeypatch):
+    seed_master("005930")
+    monkeypatch.setattr(C, "yf_series", Fetch(daily()))
+    with TestClient(main.app) as c:
+        r = c.get("/stock/chart/005930?days=90")
+        assert r.status_code == 200 and r.json()["name"] == "삼성전자" and r.headers["cache-control"] == "no-store"
+        assert c.get("/stock/chart/999999").status_code == 404
+        assert c.get("/stock/chart/005930?days=7").status_code == 400 and c.get("/stock/chart/005930?interval=1h").status_code == 400
+        assert c.get("/stock/chart/005930?compare=1").json()["index"]["name"] == "KOSPI"
+        js = c.get("/static/chart.js")
+    assert js.status_code == 200 and "KMSChart" in js.text and "/stock/chart/" in js.text and "지수와 비교" in js.text
+
+
+def test_cards_on_watchlist_and_screener_have_chart_details():
+    from tests import test_screener as ts
+    from tests import test_stock_views as sv
+    sv.seed_watchlist("005930")
+    ts.seed_master()
+    ts.S.run(db.session, ts.fake_chunk, lambda s: ts.idx_bars(), lambda s: 2e12, delay=0, ai=False)
+    with TestClient(main.app) as c:
+        wl = c.get("/watchlist").text
+        sc = c.get("/screener").text
+    assert 'class="stock-chart" data-code="005930" data-compare="0" data-levels="1"' in wl and '<script src="/static/chart.js">' in wl
+    assert 'class="stock-chart" data-code="000001" data-compare="1" data-levels="0"' in sc and '<script src="/static/chart.js">' in sc
+    assert "매도" not in wl

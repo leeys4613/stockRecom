@@ -49,6 +49,10 @@
       <div class="m"><span class="k">현재가</span><span class="v">{{ "{:,.0f}".format(i.price) }}</span></div>
       <div class="m"><span class="k">거래량(5일/20일)</span><span class="v">{% if i.vol_ratio is not none %}{{ "{:.1f}".format(i.vol_ratio) }}배{% else %}-{% endif %}</span></div>
     </div>
+    <details class="stock-chart" data-code="{{ i.code }}" data-compare="1" data-levels="0" style="margin:6px 0">
+      <summary class="mut">차트 보기 (분봉·일봉·주봉 · 지수와 비교)</summary>
+      <div class="chart-host" style="margin-top:6px"></div>
+    </details>
     {% if i.leader %}
     <div class="leader mut" style="margin:6px 0">업종 <b>{{ i.leader.industry }}</b> ·
       {% if i.leader.is_self %}<span class="badge fresh">업종 대장주(시총 1위)</span>
@@ -84,4 +88,5 @@
 <p class="mut">AI 보강: 후보의 최근 3일 뉴스 헤드라인에 근거해 강세의 배경·뉴스 톤·리스크를 해석합니다(한 번의 AI 호출). 근거 헤드라인을 확인하지 못한 판단은 중립으로 처리하며, 수익률·시가총액 같은 숫자는 AI가 아니라 코드가 계산합니다.</p>
 <p class="mut">업종·대장주: 업종은 KRX 표준 업종명(세분류, 사용자가 올린 상장법인 목록 기준)이라 시장에서 말하는 섹터와 다를 수 있습니다. 대장주는 같은 업종에서 20일 평균 거래대금 상위 {{ cfg.SCREEN_LEADER_CHECK }}개 중 시가총액이 가장 큰 종목입니다. 업종 정보가 없으면 표시하지 않습니다.</p>
 <p class="mut">데이터: Yahoo Finance 일봉(지연·누락 가능). 기준일 일봉이 없는 종목(거래정지·데이터 지연)은 제외하고 개수를 표시합니다. 시가총액은 Yahoo 값이며 확인되지 않으면 제외합니다.</p>
+<script src="/static/chart.js"></script>
 {% endblock %}

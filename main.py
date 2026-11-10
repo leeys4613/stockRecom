@@ -130,6 +130,17 @@ def market_chart(key: str, days: int = 90, interval: str = "1d"):
     return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 
+@app.get("/stock/chart/{code}")
+def stock_chart(code: str, days: int = 90, interval: str = "1d", compare: int = 0, levels: int = 0):
+    if interval not in charts.INTERVALS or days not in charts.INTERVALS[interval]:
+        return JSONResponse({"error": "선택할 수 없는 간격/기간입니다"}, status_code=400, headers={"Cache-Control": "no-store"})
+    try:
+        data = charts.stock_series(db.session, code, days, interval, bool(compare), bool(levels))
+    except charts.ChartError as e:
+        return JSONResponse({"error": str(e)}, status_code=404 if "목록에 없는" in str(e) else 502, headers={"Cache-Control": "no-store"})
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/analog")
 def analog_page(request: Request):
     with db.session() as conn:

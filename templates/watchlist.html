@@ -182,6 +182,10 @@
       <div class="mut" style="margin-top:3px">{% if lv.vol_ratio is not none %}최근 5일 거래량은 직전 20일 평균의 {{ "{:.1f}".format(lv.vol_ratio) }}배 · {% endif %}과거에 가격이 반응한 자리를 기계적으로 찾은 것으로 앞으로도 작동한다는 보장은 없습니다. 투자 권유가 아닙니다.</div>
     </div>
     {% endif %}
+    <details class="stock-chart" data-code="{{ e.code }}" data-compare="0" data-levels="1" style="margin:6px 0">
+      <summary class="mut">차트 보기 (분봉·일봉·주봉 · 지지·저항선)</summary>
+      <div class="chart-host" style="margin-top:6px"></div>
+    </details>
     <details style="margin:4px 0">
       <summary class="mut" style="cursor:pointer">증권사 컨센서스 (참고용 · 낙관 편향 주의)</summary>
       <div class="metrics" style="margin-top:6px">
@@ -217,4 +221,5 @@
   {% endfor %}
 </div>
 <p class="mut">순위는 추천 점수(대중심리 50% + 주도섹터 50%)입니다. 대중심리는 최근 3일 뉴스 헤드라인이 근거로 확인될 때만 반영되며, 근거를 확인하지 못하면 0(중립)으로 처리합니다.</p>
+<script src="/static/chart.js"></script>
 {% endblock %}

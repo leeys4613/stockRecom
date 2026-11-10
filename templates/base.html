@@ -18,6 +18,12 @@
   body, td, th { word-break: keep-all; overflow-wrap: break-word; }
   h1 { margin:0 0 4px; font-size:22px; }
   h2 { font-size:16px; margin:24px 0 8px; }
+  .chart-tabs { display:flex; gap:6px; margin:0 0 6px; flex-wrap:wrap; }
+  .chart-tabs button { padding:5px 12px; font-size:13px; }
+  .chart-tabs button[aria-pressed="true"] { font-weight:700; border:2px solid currentColor; }
+  .chart-box svg { width:100%; height:auto; display:block; touch-action:pan-y; }
+  .chart-sum { font-size:13px; margin-top:4px; }
+  details.stock-chart > summary { cursor:pointer; }
   nav { display:flex; flex-wrap:wrap; gap:6px 14px; }
   nav a { white-space:nowrap; color:inherit; text-decoration:none; padding-bottom:2px; }
   nav a.on { border-bottom:2px solid currentColor; font-weight:600; }

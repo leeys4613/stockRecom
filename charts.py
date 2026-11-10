@@ -122,42 +122,91 @@ def _alt_rows(symbol, interval, fetcher):
         return (hit[1] if hit else []), f"{type(e).__name__}: {e}"[:160]
 
 
-def series(conn_factory, key, days=90, interval="1d", fetcher=None):
-    """차트용 데이터. 반환 dict(key, name, unit, note, interval, points[[라벨, 값]], first, last, high, low, chg, stale, error).
+def _points(conn_factory, symbol, transform, days, interval, fetcher):
+    """한 심볼의 (라벨, 값) 목록과 오류 문자열. 일봉은 DB 캐시, 분봉/주봉은 메모리 캐시."""
+    if interval == "1d":
+        with _lock:      # 같은 심볼을 동시에 여러 번 눌러도 한 번만 받는다
+            rows, err = _ensure(conn_factory, symbol, fetcher)
+        if len(rows) < TREND + 2:
+            raise ChartError(err or "차트를 그릴 데이터가 부족합니다")
+        pts = transform(rows) if transform else rows
+        cut = (datetime.strptime(pts[-1][0], "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
+        return [p for p in pts if p[0] >= cut], err
+    with _lock:
+        rows, err = _alt_rows(symbol, interval, fetcher)
+    if len(rows) < 3:
+        raise ChartError(err or "차트를 그릴 데이터가 부족합니다")
+    if interval == "5m":     # 최근 days 거래일(라벨 앞 'MM-DD'가 다른 날 수)만
+        keep = set(list(dict.fromkeys(p[0][:5] for p in rows))[-days:])
+        return [p for p in rows if p[0][:5] in keep], err
+    cut = (datetime.strptime(rows[-1][0], "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
+    return [p for p in rows if p[0] >= cut], err
 
-    interval: 5m(분봉) / 1d(일봉) / 1wk(주봉). 파생 지표는 일봉만. fetcher 는 일봉이면 f(symbol), 그 외엔 f(symbol, interval).
-    """
-    sp = spec(key)
-    if sp is None:
-        raise ChartError("이 지표는 차트가 없습니다(여러 종목을 묶은 지표)")
+
+def _check(interval, days):
     if interval not in INTERVALS:
         raise ChartError("간격은 분봉(5m)·일봉(1d)·주봉(1wk) 중 하나입니다")
     if days not in INTERVALS[interval]:
         raise ChartError("선택할 수 없는 기간입니다")
-    if interval != "1d" and sp["transform"]:
-        raise ChartError("이 지표는 일봉만 제공합니다(10거래일 기준 지표)")
-    if interval == "1d":
-        with _lock:      # 같은 지표를 동시에 여러 번 눌러도 한 번만 받는다
-            rows, err = _ensure(conn_factory, sp["symbol"], fetcher)
-        if len(rows) < TREND + 2:
-            raise ChartError(err or "차트를 그릴 데이터가 부족합니다")
-        pts = sp["transform"](rows) if sp["transform"] else rows
-        cut = (datetime.strptime(pts[-1][0], "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
-        pts = [p for p in pts if p[0] >= cut]
-    else:
-        with _lock:
-            rows, err = _alt_rows(sp["symbol"], interval, fetcher)
-        if len(rows) < 3:
-            raise ChartError(err or "차트를 그릴 데이터가 부족합니다")
-        if interval == "5m":     # 최근 days 거래일(라벨 앞 'MM-DD'가 다른 날 수)만
-            keep = set(list(dict.fromkeys(p[0][:5] for p in rows))[-days:])
-            pts = [p for p in rows if p[0][:5] in keep]
-        else:
-            cut = (datetime.strptime(rows[-1][0], "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
-            pts = [p for p in rows if p[0] >= cut]
+
+
+def _pack(pts, name, unit, note, interval, days, err, **extra):
     vals = [p[1] for p in pts]
     first, last = vals[0], vals[-1]
-    return dict(key=key, name=config.MACRO_INDICATORS[key][0], unit=sp["unit"], note=sp["note"], interval=interval, days=days,
-                points=[[d, round(v, 4)] for d, v in pts], first=first, last=last, high=max(vals), low=min(vals),
-                chg=None if sp["unit"] == "%" or first == 0 else (last / first - 1) * 100,   # 비율 지표는 변화율 대신 값 차이를 본다
-                diff=last - first, stale=err is not None, error=err, as_of=pts[-1][0])
+    return dict(name=name, unit=unit, note=note, interval=interval, days=days, points=[[d, round(v, 4)] for d, v in pts],
+                first=first, last=last, high=max(vals), low=min(vals),
+                chg=None if unit == "%" or first == 0 else (last / first - 1) * 100,   # 비율 지표는 변화율 대신 값 차이를 본다
+                diff=last - first, stale=err is not None, error=err, as_of=pts[-1][0], **extra)
+
+
+def series(conn_factory, key, days=90, interval="1d", fetcher=None):
+    """매크로 지표 차트 데이터. interval: 5m(분봉) / 1d(일봉) / 1wk(주봉). 파생 지표는 일봉만.
+
+    fetcher 는 일봉이면 f(symbol), 그 외엔 f(symbol, interval).
+    """
+    sp = spec(key)
+    if sp is None:
+        raise ChartError("이 지표는 차트가 없습니다(여러 종목을 묶은 지표)")
+    _check(interval, days)
+    if interval != "1d" and sp["transform"]:
+        raise ChartError("이 지표는 일봉만 제공합니다(10거래일 기준 지표)")
+    pts, err = _points(conn_factory, sp["symbol"], sp["transform"], days, interval, fetcher)
+    return _pack(pts, config.MACRO_INDICATORS[key][0], sp["unit"], sp["note"], interval, days, err, key=key)
+
+
+def stock_series(conn_factory, code, days=90, interval="1d", compare=False, levels=False, fetcher=None):
+    """종목 차트 데이터. 대상은 종목 목록(stock_master)에 있는 종목만. compare=True 면 소속 지수를 시작점(첫 값)에 맞춰 겹쳐 그릴 수 있게 함께 돌려준다.
+
+    levels=True 면(일봉만) 관심종목의 최근 지지·저항 계산값을 함께 돌려준다.
+    """
+    _check(interval, days)
+    with conn_factory() as conn:
+        m = conn.execute("SELECT code,name,market FROM stock_master WHERE code=?", ((code or "").strip().upper(),)).fetchone()
+        lv = None
+        if levels and interval == "1d" and m:
+            r = conn.execute("SELECT metrics FROM stock_views WHERE code=? AND status='ok' ORDER BY id DESC LIMIT 1", (m["code"],)).fetchone()
+            if r and r["metrics"]:
+                import json
+                got = (json.loads(r["metrics"]) or {}).get("levels")
+                if got:
+                    lv = dict(supports=[x["price"] for x in got.get("supports", [])], resistances=[x["price"] for x in got.get("resistances", [])])
+    if not m:
+        raise ChartError("종목 목록에 없는 종목입니다")
+    sym = f"{m['code']}.{m['market']}"
+    pts, err = _points(conn_factory, sym, None, days, interval, fetcher)
+    extra = dict(code=m["code"], market=m["market"], levels=lv)
+    if compare:
+        idx_sym = config.SCREEN_INDEX[m["market"]]
+        try:
+            ipts, _ = _points(conn_factory, idx_sym, None, days, interval, fetcher)
+            imap = dict(ipts)
+            common = [(d, v) for d, v in pts if d in imap]
+            if len(common) >= 3 and imap[common[0][0]]:
+                base_s, base_i = common[0][1], imap[common[0][0]]
+                extra["index"] = dict(
+                    name="KOSPI" if m["market"] == "KS" else "KOSDAQ",
+                    points=[[d, round(imap[d] / base_i * base_s, 4)] for d, _ in common],   # 시작점을 종목 가격에 맞춰 겹쳐 보게 한다
+                    chg=(imap[common[-1][0]] / base_i - 1) * 100, stock_chg=(common[-1][1] / base_s - 1) * 100)
+        except Exception:
+            pass       # 지수 선을 못 그려도 종목 차트는 보여준다
+    return _pack(pts, m["name"], "", None, interval, days, err, **extra)
