@@ -136,6 +136,29 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 CREATE TABLE IF NOT EXISTS app_kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 
+-- 지수 대비 강세 종목 스캔 (실행별 결과를 쌓아 두어 나중에 이후 성과를 검증할 수 있다)
+CREATE TABLE IF NOT EXISTS screen_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ok','failed')),
+    error TEXT,
+    asof TEXT,              -- 기준 거래일(지수의 마지막 일봉 날짜)
+    index_ret TEXT,         -- JSON: 시장별 지수 3일/5일 수익률
+    universe_n INTEGER, loaded_n INTEGER, failed_n INTEGER, passed_n INTEGER, mcap_missing_n INTEGER, final_n INTEGER,
+    ai_status TEXT,         -- 2단계 AI 보강: ok / failed / skipped(후보 없음)
+    ai_error TEXT
+);
+CREATE TABLE IF NOT EXISTS screen_items (
+    run_id INTEGER NOT NULL REFERENCES screen_runs(id),
+    rank INTEGER NOT NULL,
+    code TEXT NOT NULL, name TEXT NOT NULL, market TEXT NOT NULL,
+    price REAL, r3 REAL, r5 REAL, ex3 REAL, ex5 REAL, beat_days INTEGER,
+    value20 REAL, mcap REAL, vol_ratio REAL, flags TEXT,
+    ai TEXT,                -- JSON: 뉴스 기반 강세 배경·톤·리스크 (2단계)
+    PRIMARY KEY (run_id, code)
+);
+CREATE TABLE IF NOT EXISTS mcap_cache (code TEXT PRIMARY KEY, mcap REAL NOT NULL, fetched_at TEXT NOT NULL);
+
 -- 증권사 컨센서스 일별 스냅샷 (목표가 추이를 직접 계산하기 위해 계속 쌓는다)
 CREATE TABLE IF NOT EXISTS consensus_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -95,7 +95,7 @@ def test_scheduler_jobs_analysis_times_plus_daily_reports():
     ids = {j.id for j in s.get_jobs()}
     assert len(config.SCHEDULE_TIMES) == 4
     assert {f"analysis-{h:02d}{m:02d}" for h, m in config.SCHEDULE_TIMES} <= ids
-    assert "reports-daily" in ids and len(ids) == 5
+    assert {"reports-daily", "screen-daily"} <= ids and len(ids) == 6
 
 
 def test_reports_job_skips_non_trading_day(monkeypatch):

@@ -14,6 +14,7 @@ import alerts
 import allocations
 import gauge
 import performance
+import screener
 import stockviews
 import weights as weights_mod
 from analyzer import llm, stock_llm
@@ -303,6 +304,13 @@ def scheduled_reports_job():
     if not calendar_kr.is_trading_day(calendar_kr.today_kst()):
         return None
     return run_reports_and_views()
+
+
+def scheduled_screen_job():
+    """장 마감 후 지수 대비 강세 종목 스캔 (거래일만)."""
+    if not calendar_kr.is_trading_day(calendar_kr.today_kst()):
+        return None
+    return screener.run(db.session)
 
 
 _stock_lock = threading.Lock()

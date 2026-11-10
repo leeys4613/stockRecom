@@ -15,6 +15,7 @@ import config
 import db
 import performance
 import pipeline
+import screener
 import stockmaster
 import weights as weights_mod
 from scoring import picks as picks_mod
@@ -47,6 +48,9 @@ def build_scheduler():
     sched.add_job(pipeline.scheduled_reports_job,
                   CronTrigger(hour=config.REPORTS_SCHEDULE[0], minute=config.REPORTS_SCHEDULE[1]),
                   id="reports-daily", coalesce=True, max_instances=1, misfire_grace_time=3600)
+    sched.add_job(pipeline.scheduled_screen_job,
+                  CronTrigger(hour=config.SCREEN_SCHEDULE[0], minute=config.SCREEN_SCHEDULE[1]),
+                  id="screen-daily", coalesce=True, max_instances=1, misfire_grace_time=3600)
     return sched
 
 
@@ -80,6 +84,24 @@ def index(request: Request):
         ctx = dict(active="dash", analysis=pipeline.latest_analysis(conn), picks=top, picks_at=cons_at,
                    view_at=view_at, watch_count=len(reports.watchlist(conn)))
     return templates.TemplateResponse(request, "index.html", ctx)
+
+
+@app.get("/screener")
+def screener_page(request: Request, m: str | None = None):
+    with db.session() as conn:
+        last, ok, items = screener.latest(conn)
+        watch = {w["code"] for w in reports.watchlist(conn)}
+    if m in ("KS", "KQ"):
+        items = [i for i in items if i["market"] == m]
+    ctx = dict(active="screen", last=last, run=ok, items=items, m=m, watch=watch, flag_text=screener.FLAG_TEXT,
+               markets=reports.MARKETS, cfg=config, level_text=policy_mod.LEVEL_TEXT)
+    return templates.TemplateResponse(request, "screener.html", ctx)
+
+
+@app.post("/screener/refresh")
+def screener_refresh(background: BackgroundTasks):
+    background.add_task(screener.run, db.session)
+    return RedirectResponse("/screener", status_code=303)
 
 
 @app.get("/tracker")

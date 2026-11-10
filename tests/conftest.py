@@ -33,6 +33,13 @@ def isolated(tmp_path, monkeypatch):
     def no_push(sub, payload, pem):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(alerts, "send_push", no_push)                # 실제 푸시 발송 차단
+    import screener
+
+    def no_screen(*a, **k):
+        raise RuntimeError("no network in tests")
+    for fn in ("yf_chunk", "yf_index", "yf_mcap"):
+        monkeypatch.setattr(screener, fn, no_screen)                 # 스크리너 네트워크 차단
+
     def no_ohlcv(symbol, period=None):
         raise RuntimeError("no network in tests")
     monkeypatch.setattr(macro, "yf_ohlcv", no_ohlcv)                 # 일봉 조회 차단 (지지·저항은 테스트에서 직접 주입)
