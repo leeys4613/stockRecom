@@ -19,12 +19,25 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def raise_fd_limit(target=4096):
+    """launchd 서버의 열린 파일 한도(기본 256)는 전체 종목 조회 중 소켓이 쌓이면 바닥난다. 가능하면 소프트 한도를 올린다."""
+    try:
+        import resource
+
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        want = target if hard == resource.RLIM_INFINITY else min(target, hard)
+        if soft < want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    except Exception:
+        pass
+
+
 # ---- 데이터 조회 (네트워크; 테스트에서 교체) ----
 def yf_chunk(symbols):
     """{symbol: [(date, close, volume)] 오름차순}. 데이터가 없는 종목은 빠진다."""
     import yfinance as yf
 
-    df = yf.download(symbols, period="2mo", interval="1d", group_by="ticker", threads=True, progress=False,
+    df = yf.download(symbols, period="2mo", interval="1d", group_by="ticker", threads=4, progress=False,
                      auto_adjust=False)
     out = {}
     top = set(df.columns.get_level_values(0))
@@ -115,6 +128,7 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
     if not _lock.acquire(blocking=False):
         return None
     try:
+        raise_fd_limit()
         chunk_fetcher = chunk_fetcher or yf_chunk
         index_fetcher = index_fetcher or yf_index
         mcap_fetcher = mcap_fetcher or yf_mcap
@@ -146,6 +160,10 @@ def run(conn_factory, chunk_fetcher=None, index_fetcher=None, mcap_fetcher=None,
                 loaded += 1
                 if passes(m):
                     cands.append(dict(u, **m, flags=flags_for(m)))
+        if universe and loaded < len(universe) * config.SCREEN_MIN_LOAD_RATIO:
+            # 데이터 대부분을 못 받은 결과는 "강세 종목 없음"처럼 보이면 안 되므로 실패로 기록한다
+            return _save_failed(conn_factory, len(universe),
+                                f"종목 일봉 조회 성공률이 낮습니다 ({loaded}/{len(universe)}개). 네트워크/Yahoo 제한을 확인하세요")
         cands.sort(key=lambda x: -(x["ex3"] + x["ex5"]) / 2)
         final, missing = [], 0
         for c in cands:

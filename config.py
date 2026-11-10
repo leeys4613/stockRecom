@@ -168,6 +168,7 @@ SCREEN_MIN_PRICE = 1000
 SCREEN_BEAT_DAYS = 3               # 최근 5거래일 중 지수보다 더 오른 날이 최소 며칠
 SCREEN_TOP_N = 20
 SCREEN_CHUNK = 200
+SCREEN_MIN_LOAD_RATIO = 0.5        # 일봉을 이 비율 미만만 받으면 스캔 실패로 기록
 SCREEN_MCAP_DELAY_SEC = 0.15
 SCREEN_MCAP_CACHE_DAYS = 7
 SCREEN_OVERHEAT_R5 = 30.0          # 5일 상승률이 이 이상이면 "단기 과열" 표시(%)

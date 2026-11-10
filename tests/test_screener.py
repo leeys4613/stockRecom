@@ -244,7 +244,24 @@ def test_page_shows_ai_note_and_skips_ai_when_no_candidates(monkeypatch):
     assert "실적·펀더멘털" in html and "재료 지속성" in html and "리스크 · 5일 급등으로 과열 우려" in html and "근거 기사" in html
     assert "매도" not in html
     seed_master()
-    S.run(db.session, lambda syms: {}, lambda s: idx_bars(), lambda s: 2e12, delay=0, provider=ScreenProvider(ai_payload()))
+    S.run(db.session, lambda syms: {s: mk(d2=-2.0) for s in syms}, lambda s: idx_bars(), lambda s: 2e12, delay=0,
+          provider=ScreenProvider(ai_payload()))        # 모두 약세 → 후보 없음
     with db.session() as conn:
         _, run, items = S.latest(conn)
     assert run["ai_status"] == "skipped" and items == []
+
+
+def test_low_load_ratio_is_recorded_as_failure_not_empty_result():
+    seed_master()
+    S.run(db.session, fake_chunk, lambda s: idx_bars(), lambda s: 2e12, delay=0, ai=False)        # 정상 결과 먼저
+    S.run(db.session, lambda syms: {}, lambda s: idx_bars(), lambda s: 2e12, delay=0, ai=False)   # 전부 실패
+    with db.session() as conn:
+        last, run, items = S.latest(conn)
+    assert last["status"] == "failed" and "성공률이 낮습니다" in last["error"] and run["status"] == "ok" and items
+
+
+def test_raise_fd_limit_never_lowers_or_raises_errors():
+    import resource
+    soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    S.raise_fd_limit(16)
+    assert resource.getrlimit(resource.RLIMIT_NOFILE)[0] >= min(soft, 16)
